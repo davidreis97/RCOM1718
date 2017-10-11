@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <signal.h>
+#include <unistd.h>
 
 #define _POSIX_SOURCE 1 /* POSIX compliant source */
 #define TRANSMITTER 0
@@ -43,70 +44,60 @@ APPLICATION_LAYER al;
 
 int TIMEOUT_APPLIED = 0; int TIMEOUT_TRIES;
 
+
+void changeBlocking(int block){
+	int flags = fcntl(al.fd, F_GETFL, 0);
+	if (block){
+		fcntl(al.fd, F_SETFL, flags & ~O_NONBLOCK);
+	}else {
+		fcntl(al.fd, F_SETFL, flags | O_NONBLOCK);
+	}
+}
+
+
+
 void atende() {
 	printf("alarme # %d\n", TIMEOUT_TRIES);
 	TIMEOUT_APPLIED = 0;
 	TIMEOUT_TRIES--;
+
+	changeBlocking(0);
 }
 
-int llopen(){
-	int fd;
-	struct termios newtio;
+int llwrite(){
 
-	fd = open(ll.port, O_RDWR | O_NOCTTY);
-	if (fd <0) {perror(ll.port); exit(-1); }
+}
 
-	if ( tcgetattr(fd,&(ll.oldtio)) == -1) {
-		perror("tcgetattr");
-		exit(-1);
-	}
-
-	bzero(&newtio, sizeof(newtio));
-	newtio.c_cflag = ll.baudRate | CS8 | CLOCAL | CREAD;
-	newtio.c_iflag = IGNPAR;
-	newtio.c_oflag = 0;
-
-	newtio.c_lflag = 0;
-
-	newtio.c_cc[VTIME]    = 0;  
-	newtio.c_cc[VMIN]     = 1;
-
-	tcflush(fd, TCIOFLUSH);
-
-	if ( tcsetattr(fd,TCSANOW,&newtio) == -1) {
-		perror("tcsetattr");
-		exit(-1);
-	}
-
+int llclose(){
 	int ch = 0, n = 0;
 	char buffer[BUFFER_SIZE];
-	bzero(buffer, 255);
-	
-	if(al.status == TRANSMITTER){
+	bzero(buffer, BUFFER_SIZE);
+
+    if(al.status == TRANSMITTER){
 		TIMEOUT_TRIES = ll.numTransmissions;
 
 		while(TIMEOUT_TRIES){
-			(void) signal(SIGALRM, atende);
+			signal(SIGALRM, atende);
             
-            //printf("Timeout applied %d \n", TIMEOUT_APPLIED);
-		    if(!TIMEOUT_APPLIED){
-  
+		    if(!TIMEOUT_APPLIED){  
 				alarm(ll.timeout);
 				TIMEOUT_APPLIED=1;
-                
+
                 buffer[0] = FLAG;
 		        buffer[1] = SENDER_ADDRESS;
-		        buffer[2] = CTRL_SET;
+		        buffer[2] = CTRL_DISC;
 		        buffer[3] = 0; //Block Check Character (BCC)
 		        buffer[4] = FLAG;
 		        buffer[5] = '\0';
 
-		        int num = write(fd,buffer,5);
+		        int num = write(al.fd,buffer,5);
 
-                printf("Sent %d bytes and applied timeout",num);
+                printf("Sent %d bytes and applied timeout\n",num);
 			}
 
-			if((ch = read(fd,buffer+n,1)) <=0 ){
+			changeBlocking(1);
+
+			if((ch = read(al.fd,buffer+n,1)) <=0 ){
             	//Do nothing        
         	}else if (n==0 && buffer[0] != FLAG){
         		printf("No flag on initial byte.\n");
@@ -124,7 +115,149 @@ int llopen(){
         	if (ch != 0){
         		n++;
         	}
-            printf("Cycle\n");
+    	}
+
+    	if(buffer[2] == CTRL_DISC){
+    		printf("Successfully closed! Sending UA\n");
+            
+            buffer[0] = FLAG;
+		    buffer[1] = SENDER_ADDRESS;
+		    buffer[2] = CTRL_UA;
+		    buffer[3] = 0; //Block Check Character (BCC)
+		    buffer[4] = FLAG;
+		    buffer[5] = '\0';
+
+		    int num = write(al.fd,buffer,5);
+    	}
+	}else if(al.status == RECEIVER){
+		TIMEOUT_TRIES = ll.numTransmissions;
+
+		while(TIMEOUT_TRIES){
+			signal(SIGALRM, atende);
+            
+		    if(!TIMEOUT_APPLIED){  
+				alarm(ll.timeout);
+				TIMEOUT_APPLIED=1;
+
+                buffer[0] = FLAG;
+		        buffer[1] = SENDER_ADDRESS;
+		        buffer[2] = CTRL_DISC;
+		        buffer[3] = 0; //Block Check Character (BCC)
+		        buffer[4] = FLAG;
+		        buffer[5] = '\0';
+
+		        int num = write(al.fd,buffer,5);
+
+                printf("Sent %d bytes and applied timeout\n",num);
+			}
+
+			changeBlocking(1);
+
+			if((ch = read(al.fd,buffer+n,1)) <=0 ){
+            	//Do nothing        
+        	}else if (n==0 && buffer[0] != FLAG){
+        		printf("No flag on initial byte.\n");
+        		continue;
+        	}else if (n==1 && buffer[1] == FLAG){
+        		printf("Flag after first byte..\n");
+        		continue;
+        	}else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){ //Wraps around?...
+        		printf("Exceeded buffer.\n");
+        		n = 0;
+        		continue;
+        	}else if (buffer[n] == FLAG && n > 2){
+        		break;
+        	}
+        	if (ch != 0){
+        		n++;
+        	}
+    	}
+
+    	if(buffer[2] == CTRL_UA){
+    		printf("Successfully closed!\n");
+    	}
+	}
+    
+	tcflush(al.fd,TCIOFLUSH);
+    tcsetattr(al.fd,TCSANOW,&(ll.oldtio));
+    close(al.fd);
+    return 0;	
+}
+
+int llopen(){
+	struct termios newtio;
+	
+	al.fd = open(ll.port, O_RDWR | O_NOCTTY);
+	if (al.fd <0) {perror(ll.port); exit(-1); }
+
+	if ( tcgetattr(al.fd,&(ll.oldtio)) == -1) {
+		perror("tcgetattr");
+		exit(-1);
+	}
+
+	bzero(&newtio, sizeof(newtio));
+	newtio.c_cflag = ll.baudRate | CS8 | CLOCAL | CREAD;
+	newtio.c_iflag = IGNPAR;
+	newtio.c_oflag = 0;
+
+	newtio.c_lflag = 0;
+
+	newtio.c_cc[VTIME]    = 0;  
+	newtio.c_cc[VMIN]     = 1;
+
+	tcflush(al.fd, TCIOFLUSH);
+
+	if ( tcsetattr(al.fd,TCSANOW,&newtio) == -1) {
+		perror("tcsetattr");
+		exit(-1);
+	}
+
+	int ch = 0, n = 0;
+	char buffer[BUFFER_SIZE];
+	bzero(buffer, BUFFER_SIZE);
+		
+	if(al.status == TRANSMITTER){
+		TIMEOUT_TRIES = ll.numTransmissions;
+
+		while(TIMEOUT_TRIES){
+			signal(SIGALRM, atende);
+            
+		    if(!TIMEOUT_APPLIED){  
+				alarm(ll.timeout);
+				TIMEOUT_APPLIED=1;
+
+                buffer[0] = FLAG;
+		        buffer[1] = SENDER_ADDRESS;
+		        buffer[2] = CTRL_SET;
+		        buffer[3] = 0; //Block Check Character (BCC)
+		        buffer[4] = FLAG;
+		        buffer[5] = '\0';
+
+		        int num = write(al.fd,buffer,5);
+
+                printf("Sent %d bytes and applied timeout\n",num);
+			}
+
+			changeBlocking(1);
+
+			if((ch = read(al.fd,buffer+n,1)) <=0 ){
+            	//Do nothing        
+        	}else if (n==0 && buffer[0] != FLAG){
+        		printf("No flag on initial byte.\n");
+        		continue;
+        	}else if (n==1 && buffer[1] == FLAG){
+        		printf("Flag after first byte..\n");
+        		continue;
+        	}else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){ //Wraps around?...
+        		printf("Exceeded buffer.\n");
+        		n = 0;
+        		continue;
+        	}else if (buffer[n] == FLAG && n > 2){
+        		break;
+        	}
+        	if (ch != 0){
+        		n++;
+        	}
     	}
 
     	if(buffer[2] == CTRL_UA){
@@ -132,7 +265,7 @@ int llopen(){
     	}
 	}else if(al.status == RECEIVER){
 		while(1){
-		    if((ch = read(fd,buffer+n,1)) <=0 ){
+		    if((ch = read(al.fd,buffer+n,1)) <=0 ){
 		        return ch; //Error case        
 		    }else if (n==0 && buffer[0] != FLAG){
 		        printf("No flag on initial byte.\n");
@@ -158,12 +291,12 @@ int llopen(){
 			buffer[4] = FLAG;
 			buffer[5] = '\0';
 
-			int num = write(fd,buffer,5);
+			int num = write(al.fd,buffer,5);
 			printf("Wrote %d bytes\n",num);
 		}
 	}
 
-	return fd;
+	return 0;
 }
 
 int main(){
@@ -173,82 +306,7 @@ int main(){
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
 
-	al.status = TRANSMITTER;
-	al.fd = llopen();
-}
-
-int llclose(){
-    if(al.status == TRANSMITTER){
-		TIMEOUT_TRIES = ll.numTransmissions;
-
-		while(TIMEOUT_TRIES){
-			(void) signal(SIGALRM, atende);
-            
-            //printf("Timeout applied %d \n", TIMEOUT_APPLIED);
-		    if(!TIMEOUT_APPLIED){
-  
-				alarm(ll.timeout);
-				TIMEOUT_APPLIED=1;
-                
-                buffer[0] = FLAG;
-		        buffer[1] = SENDER_ADDRESS;
-		        buffer[2] = CTRL_DISC;
-		        buffer[3] = 0; //Block Check Character (BCC)
-		        buffer[4] = FLAG;
-		        buffer[5] = '\0';
-
-		        int num = write(fd,buffer,5);
-
-                printf("Sent %d bytes and applied timeout",num);
-			}
-
-			if((ch = read(fd,buffer+n,1)) <=0 ){
-            	//Do nothing        
-        	}else if (n==0 && buffer[0] != FLAG){
-        		printf("No flag on initial byte.\n");
-        		continue;
-        	}else if (n==1 && buffer[1] == FLAG){
-        		printf("Flag after first byte..\n");
-        		continue;
-        	}else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){ //Wraps around?...
-        		printf("Exceeded buffer.\n");
-        		n = 0;
-        		continue;
-        	}else if (buffer[n] == FLAG && n > 2){
-        		break;
-        	}
-        	if (ch != 0){
-        		n++;
-        	}
-            printf("Cycle\n");
-    	}
-
-    	if(buffer[2] == CTRL_DISC){
-    		printf("Success!");
-            
-            buffer[0] = FLAG;
-		    buffer[1] = SENDER_ADDRESS;
-		    buffer[2] = CTRL_UA;
-		    buffer[3] = 0; //Block Check Character (BCC)
-		    buffer[4] = FLAG;
-		    buffer[5] = '\0';
-
-		    int num = write(fd,buffer,5);
-    	}
-	}else if(al.status == RECEIVER){
-		buffer[0] = FLAG;
-		buffer[1] = RECEIVER_ADDRESS;
-		buffer[2] = CTRL_UA;
-		buffer[3] = 0; //Block Check Character (BCC)
-		buffer[4] = FLAG;
-		buffer[5] = '\0';
-
-		int num = write(fd,buffer,5);
-	}
-    
-	tcflush(al.fd,TCIOFLUSH);
-    tcsetattr(al.fd,TCSANOW,&(ll.oldtio));
-    close(al.fd);
-    return 0;	
+	al.status = RECEIVER;
+	llopen();
 }
 
