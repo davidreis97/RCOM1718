@@ -306,7 +306,7 @@ int main(){
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
 
-	al.status = RECEIVER;
-	llopen();
+	al.status = TRANSMITTER;
+	llclose();
 }
 
