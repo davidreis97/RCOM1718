@@ -44,6 +44,46 @@ APPLICATION_LAYER al;
 
 int TIMEOUT_APPLIED = 0; int TIMEOUT_TRIES;
 
+void stuffing( char buffer[],int length){
+	int i ;
+	int contador=1;
+	int new = length;
+
+	for ( i=1 ; i< length-1; i++){
+		if (buffer[i] == 0x7e || buffer[i]==0x7d){
+			new ++;
+		}
+	}
+
+	char aux[new];
+
+	for (i=1; i<length-1;i++){
+		if ( buffer[i] == 0x7e){
+				aux[contador]=0x7d;
+				aux[contador+1]=0x5e;
+				contador++;
+			}
+			else if(buffer[i] == 0x7d){
+				aux[contador]=0x7d;
+				aux[contador+1]=0x5e;
+				contador++;
+
+			}
+			else
+				aux[contador]=buffer[i];
+				contador++;
+		}
+
+		//strcpy(buffer, aux); doesnt work
+
+
+	int p;
+	for(p=0;p<15;p++){
+		printf(" buffer: %x \n",aux[p]);
+	}
+
+
+}
 
 void changeBlocking(int block){
 	int flags = fcntl(al.fd, F_GETFL, 0);
@@ -78,8 +118,8 @@ int llclose(){
 
 		while(TIMEOUT_TRIES){
 			signal(SIGALRM, atende);
-            
-		    if(!TIMEOUT_APPLIED){  
+
+		    if(!TIMEOUT_APPLIED){
 				alarm(ll.timeout);
 				TIMEOUT_APPLIED=1;
 
@@ -98,7 +138,7 @@ int llclose(){
 			changeBlocking(1);
 
 			if((ch = read(al.fd,buffer+n,1)) <=0 ){
-            	//Do nothing        
+            	//Do nothing
         	}else if (n==0 && buffer[0] != FLAG){
         		printf("No flag on initial byte.\n");
         		continue;
@@ -119,7 +159,7 @@ int llclose(){
 
     	if(buffer[2] == CTRL_DISC){
     		printf("Successfully closed! Sending UA\n");
-            
+
             buffer[0] = FLAG;
 		    buffer[1] = SENDER_ADDRESS;
 		    buffer[2] = CTRL_UA;
@@ -134,8 +174,8 @@ int llclose(){
 
 		while(TIMEOUT_TRIES){
 			signal(SIGALRM, atende);
-            
-		    if(!TIMEOUT_APPLIED){  
+
+		    if(!TIMEOUT_APPLIED){
 				alarm(ll.timeout);
 				TIMEOUT_APPLIED=1;
 
@@ -154,7 +194,7 @@ int llclose(){
 			changeBlocking(1);
 
 			if((ch = read(al.fd,buffer+n,1)) <=0 ){
-            	//Do nothing        
+            	//Do nothing
         	}else if (n==0 && buffer[0] != FLAG){
         		printf("No flag on initial byte.\n");
         		continue;
@@ -177,16 +217,16 @@ int llclose(){
     		printf("Successfully closed!\n");
     	}
 	}
-    
+
 	tcflush(al.fd,TCIOFLUSH);
     tcsetattr(al.fd,TCSANOW,&(ll.oldtio));
     close(al.fd);
-    return 0;	
+    return 0;
 }
 
 int llopen(){
 	struct termios newtio;
-	
+
 	al.fd = open(ll.port, O_RDWR | O_NOCTTY);
 	if (al.fd <0) {perror(ll.port); exit(-1); }
 
@@ -202,7 +242,7 @@ int llopen(){
 
 	newtio.c_lflag = 0;
 
-	newtio.c_cc[VTIME]    = 0;  
+	newtio.c_cc[VTIME]    = 0;
 	newtio.c_cc[VMIN]     = 1;
 
 	tcflush(al.fd, TCIOFLUSH);
@@ -215,14 +255,14 @@ int llopen(){
 	int ch = 0, n = 0;
 	char buffer[BUFFER_SIZE];
 	bzero(buffer, BUFFER_SIZE);
-		
+
 	if(al.status == TRANSMITTER){
 		TIMEOUT_TRIES = ll.numTransmissions;
 
 		while(TIMEOUT_TRIES){
 			signal(SIGALRM, atende);
-            
-		    if(!TIMEOUT_APPLIED){  
+
+		    if(!TIMEOUT_APPLIED){
 				alarm(ll.timeout);
 				TIMEOUT_APPLIED=1;
 
@@ -241,7 +281,7 @@ int llopen(){
 			changeBlocking(1);
 
 			if((ch = read(al.fd,buffer+n,1)) <=0 ){
-            	//Do nothing        
+            	//Do nothing
         	}else if (n==0 && buffer[0] != FLAG){
         		printf("No flag on initial byte.\n");
         		continue;
@@ -266,7 +306,7 @@ int llopen(){
 	}else if(al.status == RECEIVER){
 		while(1){
 		    if((ch = read(al.fd,buffer+n,1)) <=0 ){
-		        return ch; //Error case        
+		        return ch; //Error case
 		    }else if (n==0 && buffer[0] != FLAG){
 		        printf("No flag on initial byte.\n");
 		        continue;
@@ -309,4 +349,3 @@ int main(){
 	al.status = TRANSMITTER;
 	llclose();
 }
-
