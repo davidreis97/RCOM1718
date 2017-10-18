@@ -292,7 +292,7 @@ int llclose(){
 		bytesWritten = timeoutAndSend(buffer,5);
         
         if(bytesWritten == -1){
-            printf("LLWRITE - Timed out too many times.\n");
+            printf("LLCLOSE - Timed out too many times.\n");
         
             return -1;     
         }else if(buffer[3] != getBCC(buffer+1,2)){
@@ -324,7 +324,7 @@ int llclose(){
 		bytesWritten = timeoutAndSend(buffer,5);
         
         if(bytesWritten == -1){
-            printf("LLWRITE - Timed out too many times.\n");
+            printf("LLCLOSE - Timed out too many times.\n");
         
             return -1;     
         }else if(buffer[3] != getBCC(buffer+1,2)){
@@ -449,7 +449,7 @@ int llopen(){
 		bytesWritten = timeoutAndSend(buffer,5);
 
         if(bytesWritten == -1){
-            printf("LLWRITE - Timed out too many times.\n");
+            printf("LLOPEN - Timed out too many times.\n");
         
             return -1;     
         }else if(buffer[3] != getBCC(buffer+1,2)){
