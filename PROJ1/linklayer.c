@@ -15,7 +15,10 @@
 #define PAIR 0
 #define ODD 1
 
+int DEBUG;
+
 const char FLAG = 0x7E;
+const char ESCAPE = 0x7D;
 
 const char SENDER_ADDRESS = 0x03;
 const char RECEIVER_ADDRESS = 0x01;
@@ -24,8 +27,8 @@ const char CTRL_SET = 0b00000011;
 const char CTRL_DISC = 0b00001011;
 const char CTRL_CTRL[] = {0b00000000,0b01000000};
 const char CTRL_UA = 0b00000111;
-const char CTRL_RR[] = {0b00000101,0b10000101};
-const char CTRL_REJ[] = {0b00000001,0b10000001};
+const char CTRL_RR[] = {0b00000101,0b010000101};
+const char CTRL_REJ[] = {0b00000001,0b010000001};
 
 const int BUFFER_SIZE = 255;
 
@@ -48,6 +51,25 @@ APPLICATION_LAYER al;
 
 int TIMEOUT_APPLIED = 0; int TIMEOUT_TRIES;
 
+char getBCC(char *buffer, int size){
+    char bcc = 0; //TODO incluir o proprio bcc na conta????
+    int i;
+
+    for (i = 0; i < size; i++){
+        bcc ^= buffer[i];
+    }
+
+    return bcc;
+}
+
+void printBuffer(char *buffer, int size, char *msg){
+    int i;    
+    printf("%s: 0x", msg);
+    for(i = 0; i < size; i++){
+        printf("%02x ",(unsigned char) buffer[i]);    
+    }
+    printf("(%d bytes)\n", size);
+}
 
 void changeBlocking(int block){
 	int flags = fcntl(al.fd, F_GETFL, 0);
@@ -59,15 +81,116 @@ void changeBlocking(int block){
 }
 
 void parseAlarm() {
-	printf("PARSEALARM - Received alarm #%d\n", TIMEOUT_TRIES);
+	printf("PARSEALARM - Timeout %d...\n", ll.numTransmissions - TIMEOUT_TRIES);
 	TIMEOUT_APPLIED = 0;
 	TIMEOUT_TRIES--;
 
 	changeBlocking(0);
 }
 
+int byteStuffing(char *buffer, int size){
+    char auxBuffer[BUFFER_SIZE];
+    int bufC = 1, auxBufC = 1;
+       
+    auxBuffer[0] = FLAG;
+
+    for(;bufC < size-1;bufC++){
+        if(buffer[bufC] == FLAG || buffer[bufC] == ESCAPE){
+            auxBuffer[auxBufC] = ESCAPE;
+            auxBufC++;
+            auxBuffer[auxBufC] = buffer[bufC] ^ 0x20;
+        }else{
+            auxBuffer[auxBufC] = buffer[bufC];  
+        }
+
+        auxBufC++;
+    }
+    
+    auxBuffer[auxBufC] = FLAG;
+    auxBufC++;
+    
+    memcpy(buffer,auxBuffer,auxBufC);
+    return auxBufC;
+}
+
+int byteDestuffing(char *buffer, int size){
+    char auxBuffer[BUFFER_SIZE];
+    int bufC = 0, auxBufC = 0;
+
+    for(;bufC < size;auxBufC++){
+        if(buffer[bufC] == ESCAPE){
+            bufC++;
+            auxBuffer[auxBufC] = buffer[bufC] ^ 0x20;
+        }else{
+            auxBuffer[auxBufC] = buffer[bufC];        
+        }
+        
+        bufC++;
+    }
+
+    memcpy(buffer,auxBuffer,auxBufC);
+    return auxBufC;
+}
+
+int testStuffing(){
+    char buffer[BUFFER_SIZE];
+    int size;
+    buffer[0] = FLAG;
+    buffer[1] = SENDER_ADDRESS;
+    buffer[2] = CTRL_CTRL[PAIR];
+    buffer[3] = FLAG;
+    buffer[4] = 0;
+    buffer[5] = 0x12;
+    buffer[6] = ESCAPE;
+    buffer[7] = FLAG;
+    
+    printBuffer(buffer,8,"Initial buffer");
+    size = byteStuffing(buffer,8);
+    printBuffer(buffer,size,"After stuffing");
+    size = byteDestuffing(buffer,size);
+    printBuffer(buffer,size,"  Final buffer");
+    return 0;
+}
+
+int send(char *buffer, unsigned int size){
+    if (DEBUG) printBuffer(buffer,size,"SEND - To send, no stuffing");
+    int stuffedSize = byteStuffing(buffer,size);
+    int bytes = write(al.fd,buffer,stuffedSize);
+    if (DEBUG) printBuffer(buffer,bytes,"SEND -    Sent, w/ stuffing");
+    return bytes;
+}
+
+int receive(char *buffer){
+    int n = 0, ch=0;
+    while(1){
+        if((ch = read(al.fd,buffer+n,1)) <=0 ){
+            //Do nothing        
+        }else if (n==0 && buffer[0] != FLAG){
+    	    printf("READ - No flag on initial byte.\n");
+    	    continue;
+        }else if (n==1 && buffer[1] == FLAG){
+    	    printf("READ - Flag after first byte.\n");
+    	    continue;
+        }else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){
+    	    printf("READ - Exceeded buffer.\n");
+    	    n = 0;
+    	    continue;
+        }else if (buffer[n] == FLAG && n > 2){
+    	    break;
+        }
+        if (ch != 0){   
+    	    n++;
+        }   
+    }
+    
+    if (DEBUG) printBuffer(buffer,n+1,"RECEIVED - no destuffing");
+    int destuffedSize = byteDestuffing(buffer,n+1);
+    if (DEBUG) printBuffer(buffer,destuffedSize,"RECEIVED - w/ destuffing");
+    return destuffedSize;
+}
+
 int timeoutAndSend(char *buffer, unsigned int size){
-	printf("TIMEOUTANDSEND - Entering\n");
+	if (DEBUG) printf("TIMEOUTANDSEND - Entering\n");
 	int n = 0, ch=0, bytesWritten = 0, success = 0;
 
 	TIMEOUT_TRIES = ll.numTransmissions;
@@ -79,11 +202,9 @@ int timeoutAndSend(char *buffer, unsigned int size){
 			alarm(ll.timeout);
 			TIMEOUT_APPLIED=1;
 
-	       	//byteStuffing(buffer); TODO
+	        int bytesWritten = send(buffer,size);
 
-	        bytesWritten = write(al.fd,buffer,size);
-
-            printf("TIMEOUTANDSEND - Sent %d bytes and applied timeout to %ds\n",bytesWritten, ll.timeout);
+            if (DEBUG) printf("TIMEOUTANDSEND - Sent %d bytes and applied timeout to %ds\n",bytesWritten, ll.timeout);
 		}
 
 		changeBlocking(1);
@@ -106,27 +227,30 @@ int timeoutAndSend(char *buffer, unsigned int size){
     		break;
     	}
     	if (ch != 0){
-			alarm(0); //Cancels pending alarms
-            printf("TIMEOUTANDSEND - Received buffer[%d]: %02X\n",n,buffer[n]);    
     		n++;
     	}
 	}
-
-	printf("TIMEOUTANDSEND - Canceling all alarms\n");
+    
+    if (DEBUG) printBuffer(buffer,n+1,"RECEIVED - no destuffing");
+	if (DEBUG) printf("TIMEOUTANDSEND - Canceling all alarms\n");
 	alarm(0); //Cancels pending alarms
     TIMEOUT_APPLIED = 0;
+    
+    int destuffedSize = byteDestuffing(buffer,n+1);    
 
 	if(!success){
 		bzero(buffer,255);
+        printf("TIMEOUTANDSEND - Timed out after %d tries. \n", ll.numTransmissions);
+        return -1;
 	}
 
-    printf("TIMEOUTANDSEND - Leaving. Received %d bytes.\n",n);
+    if (DEBUG) printf("TIMEOUTANDSEND - Leaving. Received %d bytes.\n",destuffedSize);
     return bytesWritten;
 }
 
-int llwrite(char *packet, unsigned int size){ //Important: Must be '\0' terminated for strcat and timeoutAndSend
-	printf("LLWRITE - Entering\n");
-	int ch = 0, bytesWritten;
+int llwrite(char *packet, unsigned int size){
+	if (DEBUG) printf("LLWRITE - Entering\n");
+	int bytesWritten;
 	char buffer[BUFFER_SIZE];
 	bzero(buffer, BUFFER_SIZE);
 
@@ -135,37 +259,45 @@ int llwrite(char *packet, unsigned int size){ //Important: Must be '\0' terminat
     buffer[0] = FLAG;
     buffer[1] = SENDER_ADDRESS;
     buffer[2] = CTRL_CTRL[ll.sequenceNumber];
-    buffer[3] = 0; //Block Check Character 1(BCC1)
-    buffer[4] = '\0';
-    strcat(buffer,packet); // <- NEEDS STUFFING
-    int i = strlen(buffer);
-   	buffer[i] = 0; //Block Check Character 2(BCC2) <- NEEDS STUFFING
-    buffer[i+1] = FLAG;
-	buffer[i+2] = '\0';
+    buffer[3] = getBCC(buffer+1,2); //Block Check Character 1(BCC1)
+    memcpy(buffer+4,packet,size);
+   	buffer[4+size] = getBCC(buffer+4,size); //Block Check Character 2(BCC2)
+    buffer[4+size+1] = FLAG;
 
-	printf("LLWRITE - Sending and Waiting\n");
-    bytesWritten = timeoutAndSend(buffer,i+2);
-
-	if(buffer[2] == CTRL_RR[ll.sequenceNumber]){ //TODO - Check BCC...
-		if(1/*!checkControlBCC(buffer,2)*/){
-			printf("LLWRITE - Successfully sent trace! Exiting function\n");
-			printf("LLWRITE - Leaving\n");
-			return bytesWritten;
-		}else{
-			printf("LLWRITE - Error checking CTRL_BCC 1\n");
-		}
-	}else if(buffer[2] == CTRL_REJ[ll.sequenceNumber]){
-		printf("LLWRITE - Rejected: %02X , Current Parity: %d\n", buffer[2], ll.sequenceNumber);
+	if (DEBUG) printf("LLWRITE - Sending and Waiting\n");
+    bytesWritten = timeoutAndSend(buffer,4+size+2);
+    
+    if(bytesWritten == -1){
+        printf("LLWRITE - Timed out too many times.\n");
+        
+        return -1;     
+    }else if(buffer[3] != getBCC(buffer+1,2)){
+        printf("LLWRITE - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);
+        
+        return -1;     
+    }else if(buffer[2] == CTRL_REJ[ll.sequenceNumber]){
+		printf("LLWRITE - Rejected: %02X , Current Parity: %d\n",(unsigned char) buffer[2], ll.sequenceNumber);
+        printf("LLWRITE - Leaving\n");
+	    
+        return -1;
+  	}else if(buffer[2] == CTRL_RR[ll.sequenceNumber]){
+		if (DEBUG) printf("LLWRITE - Successfully sent trace! Exiting function\n");
+		if (DEBUG) printf("LLWRITE - Leaving\n");
+        
+        if (DEBUG) printf("LLWRITE - Leaving\n");
+	    
+        return bytesWritten;
 	}else{
-    	printf("LLWRITE - Failed to write on llwrite: Expected (%02X) but got (%02X)\n",CTRL_RR[ll.sequenceNumber], buffer[2]);
+    	printf("LLWRITE - Failed to write on llwrite: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_RR[ll.sequenceNumber], (unsigned char)buffer[2]);
+        printf("LLWRITE - Leaving\n");
+	    
+        return -1;
 	}
-	printf("LLWRITE - Leaving with error\n");
-	return 1;
 }
 
 int llclose(){
-	printf("LLCLOSE - Entering\n");
-	int ch = 0, n = 0;
+	if (DEBUG) printf("LLCLOSE - Entering\n");
+	int bytesWritten = 0;
 	char buffer[BUFFER_SIZE];
 	bzero(buffer, BUFFER_SIZE);
 
@@ -175,118 +307,127 @@ int llclose(){
 		buffer[0] = FLAG;
 		buffer[1] = SENDER_ADDRESS;
 		buffer[2] = CTRL_DISC;
-		buffer[3] = 0; //Block Check Character (BCC)
+		buffer[3] = getBCC(buffer+1,2); //Block Check Character (BCC)
 		buffer[4] = FLAG;
-		buffer[5] = '\0';
 
-		printf("LLCLOSE - Sending and waiting\n");
-		timeoutAndSend(buffer,5);
-
-    	if(buffer[2] == CTRL_DISC){
-    		printf("LLCLOSE - Successfully received CTRL_DISC! Sending UA\n");
+		if (DEBUG) printf("LLCLOSE - Sending and waiting\n");
+		bytesWritten = timeoutAndSend(buffer,5);
+        
+        if(bytesWritten == -1){
+            printf("LLWRITE - Timed out too many times.\n");
+        
+            return -1;     
+        }else if(buffer[3] != getBCC(buffer+1,2)){
+            printf("LLCLOSE - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);     
+          
+            return -1;
+        }else if(buffer[2] == CTRL_DISC){
+    		if (DEBUG) printf("LLCLOSE - Successfully received CTRL_DISC! Sending UA\n");
             
             buffer[0] = FLAG;
 		    buffer[1] = SENDER_ADDRESS;
 		    buffer[2] = CTRL_UA;
-		    buffer[3] = 0; //Block Check Character (BCC)
+		    buffer[3] = getBCC(buffer+1,2); //Block Check Character (BCC)
 		    buffer[4] = FLAG;
-		    buffer[5] = '\0';
 
-		    int num = write(al.fd,buffer,6);
+		    send(buffer,5);
     	}else{
-    		printf("LLCLOSE - Failed to close on llclose: Expected (%02X) but got (%02X)\n",CTRL_DISC, buffer[2]);
+    		printf("LLCLOSE - Failed to close on llclose: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_DISC, (unsigned char)buffer[2]);
+            
+            return -1;
     	}
 	}else if(al.status == RECEIVER){
 		buffer[0] = FLAG;
 		buffer[1] = SENDER_ADDRESS;
 		buffer[2] = CTRL_DISC;
-		buffer[3] = 0; //Block Check Character (BCC)
+		buffer[3] = getBCC(buffer+1,2); //Block Check Character (BCC)
 		buffer[4] = FLAG;
-		buffer[5] = '\0';
 
-		timeoutAndSend(buffer,5);
-
-    	if(buffer[2] == CTRL_UA){
-    		printf("LLCLOSE - Received UA on llclose: Successfully closed!\n");
+		bytesWritten = timeoutAndSend(buffer,5);
+        
+        if(bytesWritten == -1){
+            printf("LLWRITE - Timed out too many times.\n");
+        
+            return -1;     
+        }else if(buffer[3] != getBCC(buffer+1,2)){
+            printf("LLCLOSE - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);  
+            
+            return -1;   
+        }else if(buffer[2] == CTRL_UA){
+    		if (DEBUG) printf("LLCLOSE - Received UA on llclose: Successfully closed!\n");
     	}else{
-    		printf("LLCLOSE - Failed to close on llclose: Expected (%02X) but got (%02X)\n",CTRL_UA, buffer[2]);
+    		printf("LLCLOSE - Failed to close on llclose: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_UA, (unsigned char)buffer[2]);
+            
+            return -1;
     	}
 	}
     
 	tcflush(al.fd,TCIOFLUSH);
     tcsetattr(al.fd,TCSANOW,&(ll.oldtio));
     close(al.fd);
-    printf("LLCLOSE - Leaving\n");
+    if (DEBUG) printf("LLCLOSE - Leaving\n");
     return 0;	
 }
 
 int llread(char *buffer){
-	printf("LLREAD - Entering\n");
-	int ch = 0, n = 0;
+	if (DEBUG) printf("LLREAD - Entering\n");
 
 	(ll.sequenceNumber == PAIR) ? (ll.sequenceNumber = ODD) : (ll.sequenceNumber = PAIR); //Switches sequenceNumber
 
-	while(1){
-	    if((ch = read(al.fd,buffer+n,1)) <=0 ){
+	int size = receive(buffer);
 
-	    }else if (n==0 && buffer[0] != FLAG){
-	        printf("LLREAD - No flag on initial byte (%02X) \n", buffer[0]);
-	        continue;
-	    }else if (n==1 && buffer[1] == FLAG){
-	        printf("LLREAD - Flag after first byte..\n");
-	        continue;
-	    }else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){
-	        printf("LLREAD - Exceeded buffer.\n");
-	        n = 0;
-	        continue;
-	    }else if (buffer[n] == FLAG && n > 2){
-	    	buffer[n+1] = '\0';
-	        break;
-	    }
-
-	    if (ch != 0){
-        	n++;
-        }
-	}
-
-	printf("LLREAD - Received: %s \n",buffer);
-
-	//byteDestuffing(buffer);
+	if (DEBUG) printBuffer(buffer,size,"LLREAD - Received");
 
 	char retBuffer[BUFFER_SIZE];
 	bzero(retBuffer, BUFFER_SIZE);
 
-	if(buffer[2] == CTRL_CTRL[ll.sequenceNumber] /*&& checkDataBCC() && checkControlBCC()*/ ){
+    char *dataBuffer = buffer + 4;
+    int dataSize = size - 4 - 2;
+    
+    if(buffer[3] != getBCC(buffer+1,2)){
+        printf("LLREAD - Wrong BCC-1, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);
+        
+        return -1;     
+    }else if(buffer[2] == CTRL_CTRL[ll.sequenceNumber] /*&& checkDataBCC() && checkControlBCC()*/ ){
+        
+        if(buffer[size-2] != getBCC(dataBuffer,dataSize)){
+            printf("LLREAD - Wrong BCC-2, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(dataBuffer,dataSize),(unsigned char)buffer[size-2]);
+            
+            return -1;
+        }   
+
 		retBuffer[0] = FLAG;
 		retBuffer[1] = SENDER_ADDRESS;
 		retBuffer[2] = CTRL_RR[ll.sequenceNumber];
-		retBuffer[3] = 0; //Block Check Character (BCC)
+		retBuffer[3] = getBCC(retBuffer+1,2); //Block Check Character (BCC)
 		retBuffer[4] = FLAG;
-		retBuffer[5] = '\0';
 
-		int num = write(al.fd,retBuffer,6);
-		printf("LLREAD - CTRL_CTRL received, CTRL_RR sent\n");
+		send(retBuffer,5);
+		if (DEBUG) printf("LLREAD - CTRL_CTRL received, CTRL_RR sent\n");
+        
+        memmove(buffer,dataBuffer,dataSize);
+
+	    return dataSize;
 	}else if(buffer[2] == CTRL_DISC){ 
-		printf("LLREAD - CTRL_DISC received, calling llclose()\n");
+		if (DEBUG) printf("LLREAD - CTRL_DISC received, calling llclose()\n");
 		llclose();
+        return 0;
 	}else{
 		retBuffer[0] = FLAG;
 		retBuffer[1] = SENDER_ADDRESS;
 		retBuffer[2] = CTRL_REJ[ll.sequenceNumber];
-		retBuffer[3] = 0; //Block Check Character (BCC)
+		retBuffer[3] = getBCC(retBuffer+1,2); //Block Check Character (BCC)
 		retBuffer[4] = FLAG;
-		retBuffer[5] = '\0';
 
-		int num = write(al.fd,buffer,6);
-		printf("LLREAD - CTRL_REJ sent, received %02X expected %02X\n", buffer[2], CTRL_CTRL[ll.sequenceNumber]);
+
+		send(retBuffer,5);
+		printf("LLREAD - CTRL_REJ sent, received %02X expected %02X\n", (unsigned char)buffer[2],(unsigned char) CTRL_CTRL[ll.sequenceNumber]);
+        return -1;
 	}
-
-	printf("LLREAD - Leaving\n");
-	return ch;
 }
 
 int llopen(){
-	printf("LLOPEN - Entering\n");
+	if (DEBUG) printf("LLOPEN - Entering\n");
 	
 	struct termios newtio;
 	
@@ -315,7 +456,7 @@ int llopen(){
 		exit(-1);
 	}
 
-	int ch = 0, n = 0;
+	int bytesWritten = 0;
 	char buffer[BUFFER_SIZE];
 	bzero(buffer, BUFFER_SIZE);
 		
@@ -323,85 +464,91 @@ int llopen(){
         buffer[0] = FLAG;
         buffer[1] = SENDER_ADDRESS;
         buffer[2] = CTRL_SET;
-        buffer[3] = 0; //Block Check Character (BCC)
+        buffer[3] = getBCC(buffer+1,2); //Block Check Character (BCC)
         buffer[4] = FLAG;
-        buffer[5] = '\0';
 
-        printf("LLOPEN - Sending CTRL_SET and waiting CTRL_UA\n");
-		timeoutAndSend(buffer,5);        
- 		
-    	if(buffer[2] == CTRL_UA){
-    		printf("LLOPEN - Successfully received CTRL_UA\n");
+        if (DEBUG) printf("LLOPEN - Sending CTRL_SET and waiting CTRL_UA\n");
+		bytesWritten = timeoutAndSend(buffer,5);
+
+        if(bytesWritten == -1){
+            printf("LLWRITE - Timed out too many times.\n");
+        
+            return -1;     
+        }else if(buffer[3] != getBCC(buffer+1,2)){
+            printf("LLOPEN - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);  
+            
+            return -1;   
+        }else if(buffer[2] == CTRL_UA){
+    		if (DEBUG) printf("LLOPEN - Successfully received CTRL_UA\n");
     	}else{
-    		printf("LLOPEN - Failed to open: Expected (%02X) but got (%02X)\n",CTRL_UA, buffer[2]);
+    		printf("LLOPEN - Failed to open: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_UA, (unsigned char)buffer[2]);
+            
+            return -1;
     	}
 	}else if(al.status == RECEIVER){
-		while(1){
-		    if((ch = read(al.fd,buffer+n,1)) <=0 ){
-		        return ch; //Error case        
-		    }else if (n==0 && buffer[0] != FLAG){
-		        printf("LLOPEN - No flag on initial byte.\n");
-		        continue;
-		    }else if (n==1 && buffer[1] == FLAG){
-		        printf("LLOPEN - Flag after first byte..\n");
-		        continue;
-		    }else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){ //Wraps around?...
-		        printf("LLOPEN - Exceeded buffer.\n");
-		        n = 0;
-		        continue;
-		    }else if (buffer[n] == FLAG && n > 2){
-		        break;
-		    }
-		    if (ch != 0){
-        		n++;
-        	}
-		}
-
-		if(buffer[2] == CTRL_SET){
+		receive(buffer);
+        
+        if(buffer[3] != getBCC(buffer+1,2)){
+            printf("LLOPEN - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);
+            
+            return -1;     
+        }else if(buffer[2] == CTRL_SET){
 			buffer[0] = FLAG;
 			buffer[1] = SENDER_ADDRESS;
 			buffer[2] = CTRL_UA;
-			buffer[3] = 0; //Block Check Character (BCC)
+			buffer[3] = getBCC(buffer+1,2); //Block Check Character (BCC)
 			buffer[4] = FLAG;
-			buffer[5] = '\0';
 
-			int num = write(al.fd,buffer,5);
-			printf("LLOPEN - Sent CTRL_SET\n");
+			send(buffer,5);
+			if (DEBUG) printf("LLOPEN - Sent CTRL_SET\n");
 		}else{
-    		printf("LLOPEN - Failed to open: Expected (%02X) but got (%02X)\n",CTRL_UA, buffer[2]);
+    		printf("LLOPEN - Failed to open: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_UA, (unsigned char)buffer[2]);
+            
+            return -1;
 		}
 	}
 
-	printf("LLOPEN - Leaving\n");
+	if (DEBUG) printf("LLOPEN - Leaving\n");
 
-	return 0;
+	return al.fd;
 }
 
-void testTransmitter(){
-	al.status = TRANSMITTER;
-	llopen();
-	llwrite("teste\0",6);
-	llclose();
-}
+int main(int argc, char*argv[]){
+    if (argc >= 2){
+        if(!strcmp(argv[1], "--debug")){
+            DEBUG = 1;        
+        }else{
+            printf("Usage: %s [--debug]\n",argv[0]);  
+            return -1;     
+        }
+    }else{
+        DEBUG = 0;    
+    }
 
-void testReceiver(){
-	char buffer[255];
-	bzero(buffer,255);
-
-	al.status = RECEIVER;
-	llopen();
-	int c = llread(buffer);
-	bzero(buffer,255);
-	llread(buffer);
-}
-
-int main(int argc,char *argv[]){
+    //testStuffing();
 	ll.port = "/dev/ttyS0";
 	ll.baudRate = B38400;
-	ll.sequenceNumber = 0;
+	ll.sequenceNumber = PAIR;
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
 
+    char buffer[BUFFER_SIZE];
+    buffer[0] = FLAG;
+    buffer[1] = SENDER_ADDRESS;
+    buffer[2] = CTRL_CTRL[PAIR];
+    buffer[3] = FLAG;
+    buffer[4] = 0;
+    buffer[5] = 0x12;
+    buffer[6] = ESCAPE;
+    buffer[7] = FLAG;
+    
+    //printBuffer(buffer,8,"packet to send");
 	
+    al.status = TRANSMITTER;
+	llopen();
+	llwrite("Ola, ",5);
+    llwrite("Como esta ",10);
+    llwrite("Isto e um teste\n",16);
+	llclose();
 }
 
