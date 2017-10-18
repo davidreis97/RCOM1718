@@ -42,8 +42,8 @@ void getFileSize(){
 	printf("Getting file size from buffer\n");
 }
 
-void setFileName(){
-	printf("Getting file name from buffer\n")
+void getFileName(){
+	printf("Getting file name from buffer\n");
 }
 
 int sendStart(){
