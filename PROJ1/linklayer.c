@@ -1,21 +1,4 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <signal.h>
-#include <unistd.h>
-
-#define _POSIX_SOURCE 1 /* POSIX compliant source */
-#define TRANSMITTER 0
-#define RECEIVER 1
-#define PAIR 0
-#define ODD 1
-
-int DEBUG;
+#include "linklayer.h"
 
 const char FLAG = 0x7E;
 const char ESCAPE = 0x7D;
@@ -30,26 +13,21 @@ const char CTRL_UA = 0b00000111;
 const char CTRL_RR[] = {0b00000101,0b010000101};
 const char CTRL_REJ[] = {0b00000001,0b010000001};
 
-const int BUFFER_SIZE = 255;
+const int BUFFER_SIZE = 65535;
 
-typedef struct applicationLayer {
-	int fd;
-	int status;
-}APPLICATION_LAYER;
-
-typedef struct linkLayer {
-	char *port;
-	int baudRate;
-	unsigned int sequenceNumber;
-	unsigned int timeout;
-	unsigned int numTransmissions;
-	struct termios oldtio;
-}LINK_LAYER;
+int DEBUG;
 
 LINK_LAYER ll;
-APPLICATION_LAYER al;
 
 int TIMEOUT_APPLIED = 0; int TIMEOUT_TRIES;
+
+void setDebug(int d){
+	DEBUG = d;
+}
+
+void setLL(LINK_LAYER linklayer){
+	ll = linklayer;
+}
 
 char getBCC(char *buffer, int size){
     char bcc = 0; //TODO incluir o proprio bcc na conta????
@@ -72,11 +50,11 @@ void printBuffer(char *buffer, int size, char *msg){
 }
 
 void changeBlocking(int block){
-	int flags = fcntl(al.fd, F_GETFL, 0);
+	int flags = fcntl(ll.fd, F_GETFL, 0);
 	if (block){
-		fcntl(al.fd, F_SETFL, flags & ~O_NONBLOCK);
+		fcntl(ll.fd, F_SETFL, flags & ~O_NONBLOCK);
 	}else {
-		fcntl(al.fd, F_SETFL, flags | O_NONBLOCK);
+		fcntl(ll.fd, F_SETFL, flags | O_NONBLOCK);
 	}
 }
 
@@ -155,7 +133,7 @@ int testStuffing(){
 int send(char *buffer, unsigned int size){
     if (DEBUG) printBuffer(buffer,size,"SEND - To send, no stuffing");
     int stuffedSize = byteStuffing(buffer,size);
-    int bytes = write(al.fd,buffer,stuffedSize);
+    int bytes = write(ll.fd,buffer,stuffedSize);
     if (DEBUG) printBuffer(buffer,bytes,"SEND -    Sent, w/ stuffing");
     return bytes;
 }
@@ -163,7 +141,7 @@ int send(char *buffer, unsigned int size){
 int receive(char *buffer){
     int n = 0, ch=0;
     while(1){
-        if((ch = read(al.fd,buffer+n,1)) <=0 ){
+        if((ch = read(ll.fd,buffer+n,1)) <=0 ){
             //Do nothing        
         }else if (n==0 && buffer[0] != FLAG){
     	    printf("READ - No flag on initial byte.\n");
@@ -209,7 +187,7 @@ int timeoutAndSend(char *buffer, unsigned int size){
 
 		changeBlocking(1);
     
-		if((ch = read(al.fd,buffer+n,1)) <=0 ){
+		if((ch = read(ll.fd,buffer+n,1)) <=0 ){
         	//Do nothing        
     	}else if (n==0 && buffer[0] != FLAG){
     		printf("TIMEOUTANDSEND - No flag on initial byte.\n");
@@ -303,7 +281,7 @@ int llclose(){
 
 	(ll.sequenceNumber == PAIR) ? (ll.sequenceNumber = ODD) : (ll.sequenceNumber = PAIR); //Switches sequenceNumber
 
-    if(al.status == TRANSMITTER){
+    if(ll.status == TRANSMITTER){
 		buffer[0] = FLAG;
 		buffer[1] = SENDER_ADDRESS;
 		buffer[2] = CTRL_DISC;
@@ -336,7 +314,7 @@ int llclose(){
             
             return -1;
     	}
-	}else if(al.status == RECEIVER){
+	}else if(ll.status == RECEIVER){
 		buffer[0] = FLAG;
 		buffer[1] = SENDER_ADDRESS;
 		buffer[2] = CTRL_DISC;
@@ -362,9 +340,9 @@ int llclose(){
     	}
 	}
     
-	tcflush(al.fd,TCIOFLUSH);
-    tcsetattr(al.fd,TCSANOW,&(ll.oldtio));
-    close(al.fd);
+	tcflush(ll.fd,TCIOFLUSH);
+    tcsetattr(ll.fd,TCSANOW,&(ll.oldtio));
+    close(ll.fd);
     if (DEBUG) printf("LLCLOSE - Leaving\n");
     return 0;	
 }
@@ -410,7 +388,7 @@ int llread(char *buffer){
 	    return dataSize;
 	}else if(buffer[2] == CTRL_DISC){ 
 		if (DEBUG) printf("LLREAD - CTRL_DISC received, calling llclose()\n");
-		llclose();
+		llclose(); //TODO - PROBABLY NOT HERE; JUST RETURN 0??
         return 0;
 	}else{
 		retBuffer[0] = FLAG;
@@ -431,10 +409,10 @@ int llopen(){
 	
 	struct termios newtio;
 	
-	al.fd = open(ll.port, O_RDWR | O_NOCTTY);
-	if (al.fd <0) {perror(ll.port); exit(-1); }
+	ll.fd = open(ll.port, O_RDWR | O_NOCTTY);
+	if (ll.fd <0) {perror(ll.port); exit(-1); }
 
-	if ( tcgetattr(al.fd,&(ll.oldtio)) == -1) {
+	if ( tcgetattr(ll.fd,&(ll.oldtio)) == -1) {
 		perror("tcgetattr");
 		exit(-1);
 	}
@@ -449,9 +427,9 @@ int llopen(){
 	newtio.c_cc[VTIME]    = 0;  
 	newtio.c_cc[VMIN]     = 1;
 
-	tcflush(al.fd, TCIOFLUSH);
+	tcflush(ll.fd, TCIOFLUSH);
 
-	if ( tcsetattr(al.fd,TCSANOW,&newtio) == -1) {
+	if ( tcsetattr(ll.fd,TCSANOW,&newtio) == -1) {
 		perror("tcsetattr");
 		exit(-1);
 	}
@@ -460,7 +438,7 @@ int llopen(){
 	char buffer[BUFFER_SIZE];
 	bzero(buffer, BUFFER_SIZE);
 		
-	if(al.status == TRANSMITTER){
+	if(ll.status == TRANSMITTER){
         buffer[0] = FLAG;
         buffer[1] = SENDER_ADDRESS;
         buffer[2] = CTRL_SET;
@@ -485,7 +463,7 @@ int llopen(){
             
             return -1;
     	}
-	}else if(al.status == RECEIVER){
+	}else if(ll.status == RECEIVER){
 		receive(buffer);
         
         if(buffer[3] != getBCC(buffer+1,2)){
@@ -510,45 +488,5 @@ int llopen(){
 
 	if (DEBUG) printf("LLOPEN - Leaving\n");
 
-	return al.fd;
+	return ll.fd;
 }
-
-int main(int argc, char*argv[]){
-    if (argc >= 2){
-        if(!strcmp(argv[1], "--debug")){
-            DEBUG = 1;        
-        }else{
-            printf("Usage: %s [--debug]\n",argv[0]);  
-            return -1;     
-        }
-    }else{
-        DEBUG = 0;    
-    }
-
-    //testStuffing();
-	ll.port = "/dev/ttyS0";
-	ll.baudRate = B38400;
-	ll.sequenceNumber = PAIR;
-	ll.timeout = 3;
-	ll.numTransmissions = 3;
-
-    char buffer[BUFFER_SIZE];
-    buffer[0] = FLAG;
-    buffer[1] = SENDER_ADDRESS;
-    buffer[2] = CTRL_CTRL[PAIR];
-    buffer[3] = FLAG;
-    buffer[4] = 0;
-    buffer[5] = 0x12;
-    buffer[6] = ESCAPE;
-    buffer[7] = FLAG;
-    
-    //printBuffer(buffer,8,"packet to send");
-	
-    al.status = TRANSMITTER;
-	llopen();
-	llwrite("Ola, ",5);
-    llwrite("Como esta ",10);
-    llwrite("Isto e um teste\n",16);
-	llclose();
-}
-
