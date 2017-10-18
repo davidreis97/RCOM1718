@@ -74,16 +74,21 @@ int receiveStart(){
 		return -1;
 	}
 
-	for(i = 1; i < APP_BUFFER_SIZE - 1; ){
+	printBuffer(buffer,c,"");
+
+	for(i = 1; i < c; ){
+		printf("i: %d ; buffer[i]: %x\n", i, buffer[i]);
 		if(buffer[i] == T_SIZE){
 			getFileSize();
 		}else if(buffer[i] == T_NAME){
 			getFileName();
 		}else{
 			printf("Unknown type: %x Skipping it\n",buffer[i]);
-			i++;
-			i += (unsigned char) buffer[i];
 		}
+
+		i++;
+		i += (unsigned char) buffer[i];
+		i++;
 	}
 
 }
@@ -106,16 +111,17 @@ int main(int argc, char*argv[]){
 	ll.sequenceNumber = PAIR;
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
-	ll.status = TRANSMITTER;
+	ll.status = RECEIVER;
 	setLL(ll);
     	
 	al.filename = "linklayer.c";
 
-	if(ll.status = TRANSMITTER){
+	if(ll.status == TRANSMITTER){
 		llopen();
 		sendStart();
 		llclose();
 	}else if(ll.status == RECEIVER) {
+		llopen();
 		receiveStart();
 	}
 	
