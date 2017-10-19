@@ -14,8 +14,9 @@ const int APP_BUFFER_SIZE = 65525; //2^16 - 10 bits for link layer
 
 typedef struct appLayer {
     int fd;
-    char *filename;
+    char filename[256];
     int expectedSize;
+    unsigned char sequenceNumber;
 }APP_LAYER;
 
 APP_LAYER al;
@@ -26,11 +27,10 @@ void setFileSize(char *buffer){
 	fstat(al.fd, &buf);
 	al.expectedSize = buf.st_size;
 
-	char * size_c = (char *) &al.expectedSize; //Big Endian Switch
-	buffer[0] = size_c[3];
-	buffer[1] = size_c[2];
-	buffer[2] = size_c[1];
-	buffer[3] = size_c[0];
+	buffer[0] = ((unsigned int)al.expectedSize >> (3 << 3)) & 0xff; //Assures Big Endianness - works on both systems
+	buffer[1] = ((unsigned int)al.expectedSize >> (2 << 3)) & 0xff;
+	buffer[2] = ((unsigned int)al.expectedSize >> (1 << 3)) & 0xff;
+	buffer[3] = ((unsigned int)al.expectedSize >> (0 << 3)) & 0xff;
 }
 
 void setFileName(char *buffer){
@@ -38,12 +38,15 @@ void setFileName(char *buffer){
 	bzero(buffer + strlen(al.filename),S_NAME - strlen(al.filename));
 }
 
-void getFileSize(){
-	printf("Getting file size from buffer\n");
+void getFileSize(char *buffer){
+	al.expectedSize = 256*256*256*buffer[0] +
+					  256*256*buffer[1] +
+					  256*buffer[2] +
+					  buffer[3];
 }
 
-void getFileName(){
-	printf("Getting file name from buffer\n");
+void getFileName(char *buffer){
+	memcpy(al.filename,buffer,S_NAME);
 }
 
 int sendStart(){
@@ -74,14 +77,12 @@ int receiveStart(){
 		return -1;
 	}
 
-	printBuffer(buffer,c,"");
-
 	for(i = 1; i < c; ){
 		printf("i: %d ; buffer[i]: %x\n", i, buffer[i]);
 		if(buffer[i] == T_SIZE){
-			getFileSize();
+			getFileSize(buffer + i + 2);
 		}else if(buffer[i] == T_NAME){
-			getFileName();
+			getFileName(buffer + i + 2);
 		}else{
 			printf("Unknown type: %x Skipping it\n",buffer[i]);
 		}
@@ -91,6 +92,61 @@ int receiveStart(){
 		i++;
 	}
 
+	printf("Found file called %s with a size of %d bytes\n",al.filename,al.expectedSize);
+}
+
+int receiveData(){
+	char buffer[APP_BUFFER_SIZE];
+	bzero(buffer,APP_BUFFER_SIZE);
+	int bRead = 0, writeFd;
+
+	if ((writeFd = open(al.filename,O_WRONLY | O_APPEND | O_CREAT | O_EXCL)) <= 0){ //Currently creating file with wrong permissions.
+		printf("Error: Could not open file [%s] for write. (File already exists?)\n",al.filename);
+	}
+
+	do{
+		bzero(buffer,APP_BUFFER_SIZE);
+		bRead = llread(buffer);
+
+
+		if(bRead < 5 && bRead != 0){
+			printf("Error: Packet received was too short (%d bytes)\n",bRead);
+		}else if(buffer[0] != C_DATA){
+			printf("Error: Received non data packet\n");
+		}else if(buffer[1] != al.sequenceNumber++){
+			printf("Error: Packets desynchronized expected (%d) got (%d)\n",al.sequenceNumber,buffer[1]);
+		}else if(bRead - 4 != (256*(unsigned char) buffer[2]) + (unsigned char) buffer[3]){
+			printf("Error: Packet has wrong size expected (%d) got (%d) \n",
+				   bRead - 4, (256*(unsigned char) buffer[2]) + (unsigned char) buffer[3]);
+		}
+		
+		if(bRead != 0) {
+			if (write(writeFd, buffer + 4, bRead - 4) != bRead - 4){
+				printf("Could not write to file.\n");
+			}
+		}
+
+	}while(bRead > 0);
+
+	//TODO - check final file size with al.expectedSize
+}
+
+int sendData(){
+	int packetSize = 16, bRead = 0;
+	char buffer[packetSize]; //Fixed buffer size. Change? Random?
+
+	//Fix - Does not need to send the full packet size on the last packet
+
+	do{
+		buffer[0] = C_DATA;
+		buffer[1] = al.sequenceNumber++; //Let it overflow, let it overflow, cant hold it back anymore
+		bzero(buffer+4,packetSize-4);
+		bRead = read(al.fd, buffer+4, packetSize-4);
+		buffer[2] = ((unsigned short)bRead >> (1 << 3)) & 0xff;
+		buffer[3] = ((unsigned short)bRead >> (0 << 3)) & 0xff;
+		printBuffer(buffer,packetSize,"Sent");
+		int bSent = llwrite(buffer, bRead+4);
+	}while(bRead == packetSize-4);
 }
 
 int main(int argc, char*argv[]){
@@ -111,18 +167,21 @@ int main(int argc, char*argv[]){
 	ll.sequenceNumber = PAIR;
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
-	ll.status = RECEIVER;
+	ll.status = TRANSMITTER;
 	setLL(ll);
     	
-	al.filename = "linklayer.c";
+	memcpy(al.filename,"testfile",8);
+	al.sequenceNumber = 0;
 
 	if(ll.status == TRANSMITTER){
 		llopen();
 		sendStart();
+		sendData();
 		llclose();
 	}else if(ll.status == RECEIVER) {
 		llopen();
 		receiveStart();
+		receiveData();
 	}
 	
 }
