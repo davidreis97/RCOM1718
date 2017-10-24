@@ -205,7 +205,7 @@ int receiveData(){
 }
 
 int sendData(){
-	int packetSize = 255, bRead = 0;
+	int packetSize = 16, bRead = 0;
 	char buffer[packetSize];
 
 	do{
@@ -291,6 +291,7 @@ int main(int argc, char*argv[]){
 			return -1;
 		}
 	}else if(getLL().status == RECEIVER) {
+		al.filename = malloc(S_NAME);
 		if (llopen() < 0){
 			return -1;
 		}
@@ -300,6 +301,7 @@ int main(int argc, char*argv[]){
 		if (receiveData() < 0){
 			return -1;
 		}
+		free(al.filename);
 	}
 
 	close(al.fd);
