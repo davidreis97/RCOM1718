@@ -25,9 +25,18 @@ void setDebug(int d){
 	DEBUG = d;
 }
 
+int getDebug(){
+    return DEBUG;
+}
+
 void setLL(LINK_LAYER linklayer){
 	ll = linklayer;
 }
+
+LINK_LAYER getLL(){
+    return ll;
+}
+
 
 char getBCC(char *buffer, int size){
     char bcc = 0; //TODO incluir o proprio bcc na conta????
@@ -167,62 +176,68 @@ int receive(char *buffer){
     return destuffedSize;
 }
 
-int timeoutAndSend(char *buffer, unsigned int size){
+int timeoutAndSend(char *sendBuffer, unsigned int size){
 	if (DEBUG) printf("TIMEOUTANDSEND - Entering\n");
 	int n = 0, ch=0, bytesWritten = 0, success = 0;
+    char receiveBuffer[BUFFER_SIZE];
 
 	TIMEOUT_TRIES = ll.numTransmissions;
 
 	while(TIMEOUT_TRIES){
+
 		signal(SIGALRM, parseAlarm);
         
 	    if(!TIMEOUT_APPLIED){  
 			alarm(ll.timeout);
 			TIMEOUT_APPLIED=1;
 
-	        int bytesWritten = send(buffer,size);
+	        bytesWritten = send(sendBuffer,size);
 
             if (DEBUG) printf("TIMEOUTANDSEND - Sent %d bytes and applied timeout to %ds\n",bytesWritten, ll.timeout);
 		}
 
 		changeBlocking(1);
     
-		if((ch = read(ll.fd,buffer+n,1)) <=0 ){
+		if((ch = read(ll.fd,receiveBuffer+n,1)) <=0 ){
         	//Do nothing        
-    	}else if (n==0 && buffer[0] != FLAG){
-    		printf("TIMEOUTANDSEND - No flag on initial byte.\n");
+    	}else if (n==0 && receiveBuffer[0] != FLAG){
+            printf("TIMEOUTANDSEND - No flag on initial byte (%x)\n",receiveBuffer[0]);
     		continue;
-    	}else if (n==1 && buffer[1] == FLAG){
-    		printf("TIMEOUTANDSEND - Flag after first byte.\n");
+    	}else if (n==1 && receiveBuffer[1] == FLAG){
+    		printf("TIMEOUTANDSEND - Flag right after first byte.\n");
     		continue;
-    	}else if (buffer[n] != FLAG && n == BUFFER_SIZE - 1){
+    	}else if (receiveBuffer[n] != FLAG && n == BUFFER_SIZE - 1){
     		printf("TIMEOUTANDSEND - Exceeded buffer.\n");
     		n = 0;
     		continue;
-    	}else if (buffer[n] == FLAG && n > 2){
-    		buffer[n+1] = '\0';
+    	}else if (receiveBuffer[n] == FLAG && n > 2){
+    		receiveBuffer[n+1] = '\0';
     		success = 1;
     		break;
     	}
-    	if (ch != 0){
+    	if (ch > 0){
     		n++;
     	}
 	}
     
-    if (DEBUG) printBuffer(buffer,n+1,"RECEIVED - no destuffing");
+    if (DEBUG) printBuffer(receiveBuffer,n+1,"RECEIVED - no destuffing");
 	if (DEBUG) printf("TIMEOUTANDSEND - Canceling all alarms\n");
 	alarm(0); //Cancels pending alarms
     TIMEOUT_APPLIED = 0;
-    
-    int destuffedSize = byteDestuffing(buffer,n+1);    
+
+    if (DEBUG) printBuffer(receiveBuffer,n+1,"TIMEOUTANDSEND - Received, no destuffing");
+    int destuffedSize = byteDestuffing(receiveBuffer,n+1); 
+    if (DEBUG) printBuffer(receiveBuffer,destuffedSize,"TIMEOUTANDSEND -Received w/ destuffing");   
 
 	if(!success){
-		bzero(buffer,255);
+		bzero(receiveBuffer,255);
         printf("TIMEOUTANDSEND - Timed out after %d tries. \n", ll.numTransmissions);
         return -1;
-	}
+	}else{
+        memcpy(sendBuffer,receiveBuffer,BUFFER_SIZE);
+    }
 
-    if (DEBUG) printf("TIMEOUTANDSEND - Leaving. Received %d bytes.\n",destuffedSize);
+    if (DEBUG) printf("TIMEOUTANDSEND - Leaving. Received %d bytes and sent %d bytes.\n",destuffedSize, bytesWritten);
     return bytesWritten;
 }
 
@@ -259,11 +274,9 @@ int llwrite(char *packet, unsigned int size){
 	    
         return -1;
   	}else if(buffer[2] == CTRL_RR[ll.sequenceNumber]){
-		if (DEBUG) printf("LLWRITE - Successfully sent trace! Exiting function\n");
+		if (DEBUG) printf("LLWRITE - Successfully sent frame of (%d) bytes! Exiting function\n",bytesWritten);
 		if (DEBUG) printf("LLWRITE - Leaving\n");
-        
-        if (DEBUG) printf("LLWRITE - Leaving\n");
-	    
+        	    
         return bytesWritten;
 	}else{
     	printf("LLWRITE - Failed to write on llwrite: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_RR[ll.sequenceNumber], (unsigned char)buffer[2]);
@@ -478,7 +491,7 @@ int llopen(){
 			buffer[4] = FLAG;
 
 			send(buffer,5);
-			if (DEBUG) printf("LLOPEN - Sent CTRL_SET\n");
+			if (DEBUG) printf("LLOPEN - Sent CTRL_UA\n");
 		}else{
     		printf("LLOPEN - Failed to open: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_UA, (unsigned char)buffer[2]);
             

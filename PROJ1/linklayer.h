@@ -31,7 +31,11 @@ typedef struct linkLayer {
 
 void setDebug(int d);
 
+int getDebug();
+
 void setLL(LINK_LAYER linklayer);
+
+LINK_LAYER getLL();
 
 char getBCC(char *buffer, int size);
 
