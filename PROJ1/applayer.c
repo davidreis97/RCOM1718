@@ -11,15 +11,33 @@ const char S_SIZE = 4;
 const unsigned char S_NAME = 255;
 
 const int APP_BUFFER_SIZE = 65525; //2^16 - 10 bits for link layer
+int APP_PACKET_SIZE = 255;
+
 
 typedef struct appLayer {
     int fd;
     char *filename;
     int expectedSize;
     unsigned char sequenceNumber;
+    int progress;
 }APP_LAYER;
 
 APP_LAYER al;
+
+void printProgress(int percentage, char message[], int divisions){
+	int i = 0;
+	if(percentage > 100) percentage = 100;
+	printf("\r[%s]: [",message);
+	for(int i = 0; i <= 100; i += divisions){
+		if(percentage < i){
+			printf(" ");
+		}else{
+			printf("=");
+		}
+	}
+	printf("] %d%%",percentage);
+	fflush(stdout);
+}
 
 int setFileSize(char *buffer){
 	al.fd = open(al.filename,O_RDONLY);
@@ -124,12 +142,11 @@ int receiveStart(){ //FIX - File name not making it completely sometimes
 }
 
 int sendEnd(){ //Add more stuff? If not, move to add data and receive data
-	int packetSize = 16;
-	char buffer[packetSize];
+	char buffer[APP_PACKET_SIZE];
 
 	buffer[0] = C_END;
 
-	if(llwrite(buffer, packetSize) <= 0){
+	if(llwrite(buffer, APP_PACKET_SIZE) <= 0){
 		printf("SENDEND: Could not send end packet\n");
 	}
 }
@@ -145,18 +162,22 @@ int receiveEnd(char *buffer){
 int receiveData(){
 	char buffer[APP_BUFFER_SIZE];
 	bzero(buffer,APP_BUFFER_SIZE);
-	int bRead = 0, writeFd;
+	int bRead = 0, writeFd, totalread = 0;
 
 	if ((writeFd = open(al.filename,O_WRONLY | O_APPEND | O_CREAT | O_EXCL, 0666)) <= 0){ //Currently creating file with wrong permissions.
 		printf("RECEIVEDATA: Could not open file [%s] for write. (File already exists?)\n",al.filename);
 		return -1;
 	}
 
+	printf("Expected filesize: %d\n", al.expectedSize);
+
 	do{
 		bzero(buffer,APP_BUFFER_SIZE);
 		bRead = llread(buffer);
+		totalread += bRead - 4;
 
-		if(getDebug()) printBuffer(buffer,bRead+4,"RECEIVEDATA: Received packet");
+
+		if(getDebug()) printBuffer(buffer,bRead,"RECEIVEDATA: Received packet");
 
 		if(bRead == 0){
 			if(getDebug()) printf("RECEIVEDATA: Got bRead == 0, assuming llclose succeeded\n");
@@ -183,6 +204,9 @@ int receiveData(){
 				   bRead - 4, (0x100*(unsigned char) buffer[2]) + (unsigned char) buffer[3]);
 			return -1;
 		}
+
+		if (!getDebug() && al.progress) printProgress((totalread*100/al.expectedSize), al.filename, 5);
+
 		
 		if(bRead != 0) {
 			if (write(writeFd, buffer + 4, bRead - 4) != bRead - 4){
@@ -205,31 +229,33 @@ int receiveData(){
 }
 
 int sendData(){
-	int packetSize = 16, bRead = 0;
-	char buffer[packetSize];
+	int bRead = 0, totalread = 0;
+	char buffer[APP_PACKET_SIZE];
 
 	do{
 		buffer[0] = C_DATA;
 		buffer[1] = al.sequenceNumber++;
-		bzero(buffer+4,packetSize-4);
-		bRead = read(al.fd, buffer+4, packetSize-4);
+		bzero(buffer+4,APP_PACKET_SIZE-4);
+		bRead = read(al.fd, buffer+4, APP_PACKET_SIZE-4);
+		totalread += bRead;
+
+		if (!getDebug() && al.progress) printProgress((totalread*100/al.expectedSize), al.filename, 5);
 
 		if(bRead < 0){
 			printf("SENDDATA: Could not read from file\n");
 			return -1;
-		}
+		}else if(bRead > 0){
+			buffer[2] = ((unsigned short)bRead >> (1 << 3)) & 0xff;
+			buffer[3] = ((unsigned short)bRead >> (0 << 3)) & 0xff;
 
-		buffer[2] = ((unsigned short)bRead >> (1 << 3)) & 0xff;
-		buffer[3] = ((unsigned short)bRead >> (0 << 3)) & 0xff;
-
-		if(getDebug()) printBuffer(buffer,bRead+4,"SENDDATA: Sending packet");
+			if(getDebug()) printBuffer(buffer,bRead+4,"SENDDATA: Sending packet");
 		
-		if (llwrite(buffer, bRead+4) <= 0){
-			printf("SENDDATA: Could not send packet\n");
-			return -1;
+			if (llwrite(buffer, bRead+4) <= 0){
+				printf("SENDDATA: Could not send packet\n");
+				return -1;
+			}
 		}
-	
-	}while(bRead == packetSize-4);
+	}while(bRead > 0);
 }
 
 int processArgs(int argc, char*argv[]){	
@@ -243,6 +269,7 @@ int processArgs(int argc, char*argv[]){
 	ll.sequenceNumber = PAIR;
 	ll.timeout = 3;
 	ll.numTransmissions = 3;
+	al.progress = 0;
 	ll.status = RECEIVER;
 	
 	for(i = 1; i < argc; i++){
@@ -258,8 +285,16 @@ int processArgs(int argc, char*argv[]){
 		}else if(strcmp(argv[i],"-t") == 0 && i+1 < argc){
 			i++;
 			ll.timeout = atoi(argv[i]);
+		}else if(strcmp(argv[i],"-ps") == 0 && i+1 < argc){
+			i++;
+			APP_PACKET_SIZE = atoi(argv[i]);
+		}else if(strcmp(argv[i],"--progress") == 0){
+			al.progress = 1;
+		}else{
+			printf("Usage: %s [--debug] [-T : Set file to send (RECEIVER by default)] [-p : Set port (%s by default)] [-t : Set timeout (%d by default)] [-ps : Set packet size (%d by default)] [--progress : Show transfer progress (%d by default)]\n" ,argv[0], ll.port, ll.timeout, APP_PACKET_SIZE, al.progress);
+			return -1;
 		}
-	}
+	}	
 
 	setLL(ll);
 
@@ -303,6 +338,6 @@ int main(int argc, char*argv[]){
 		}
 		free(al.filename);
 	}
-
+	printf("\nSuccess!\n");
 	close(al.fd);
 }
