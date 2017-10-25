@@ -248,7 +248,8 @@ int llwrite(char *packet, unsigned int size){
 	bzero(buffer, BUFFER_SIZE);
 
 	(ll.sequenceNumber == PAIR) ? (ll.sequenceNumber = ODD) : (ll.sequenceNumber = PAIR); //Switches sequenceNumber
-		
+	
+	resend:
     buffer[0] = FLAG;
     buffer[1] = SENDER_ADDRESS;
     buffer[2] = CTRL_CTRL[ll.sequenceNumber];
@@ -256,6 +257,7 @@ int llwrite(char *packet, unsigned int size){
     memcpy(buffer+4,packet,size);
    	buffer[4+size] = getBCC(buffer+4,size); //Block Check Character 2(BCC2)
     buffer[4+size+1] = FLAG;
+	
 
 	if (DEBUG) printf("LLWRITE - Sending and Waiting\n");
     bytesWritten = timeoutAndSend(buffer,4+size+2);
@@ -270,16 +272,16 @@ int llwrite(char *packet, unsigned int size){
         return -1;     
     }else if(buffer[2] == CTRL_REJ[ll.sequenceNumber]){
 		printf("LLWRITE - Rejected: %02X , Current Parity: %d\n",(unsigned char) buffer[2], ll.sequenceNumber);
-        printf("LLWRITE - Leaving\n");
+        printf("LLWRITE - Sending same packet again\n");	
 	    
-        return -1;
+		goto resend;
   	}else if(buffer[2] == CTRL_RR[ll.sequenceNumber]){
 		if (DEBUG) printf("LLWRITE - Successfully sent frame of (%d) bytes! Exiting function\n",bytesWritten);
 		if (DEBUG) printf("LLWRITE - Leaving\n");
         	    
         return bytesWritten;
 	}else{
-    	printf("LLWRITE - Failed to write on llwrite: Expected (%02X) but got (%02X)\n",(unsigned char)CTRL_RR[ll.sequenceNumber], (unsigned char)buffer[2]);
+    	printf("LLWRITE - Failed to write on llwrite: Expected (%02X) but got unknown (%02X)\n",(unsigned char)CTRL_RR[ll.sequenceNumber], (unsigned char)buffer[2]);
         printf("LLWRITE - Leaving\n");
 	    
         return -1;
@@ -361,11 +363,14 @@ int llclose(){
 }
 
 int llread(char *buffer){
+	int size;
 	if (DEBUG) printf("LLREAD - Entering\n");
 
 	(ll.sequenceNumber == PAIR) ? (ll.sequenceNumber = ODD) : (ll.sequenceNumber = PAIR); //Switches sequenceNumber
-
-	int size = receive(buffer);
+	
+	retry:		
+	
+	size = receive(buffer);
 
 	if (DEBUG) printBuffer(buffer,size,"LLREAD - Received");
 
@@ -401,7 +406,7 @@ int llread(char *buffer){
 	    return dataSize;
 	}else if(buffer[2] == CTRL_DISC){ 
 		if (DEBUG) printf("LLREAD - CTRL_DISC received, calling llclose()\n");
-		llclose(); //TODO - PROBABLY NOT HERE; JUST RETURN 0??
+		llclose();
         return 0;
 	}else{
 		retBuffer[0] = FLAG;
@@ -413,7 +418,8 @@ int llread(char *buffer){
 
 		send(retBuffer,5);
 		printf("LLREAD - CTRL_REJ sent, received %02X expected %02X\n", (unsigned char)buffer[2],(unsigned char) CTRL_CTRL[ll.sequenceNumber]);
-        return -1;
+		printf("LLREAD - Will retry to receive the same packet\n");        
+		goto retry;
 	}
 }
 
