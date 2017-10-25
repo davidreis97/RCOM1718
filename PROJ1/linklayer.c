@@ -258,6 +258,11 @@ int llwrite(char *packet, unsigned int size){
    	buffer[4+size] = getBCC(buffer+4,size); //Block Check Character 2(BCC2)
     buffer[4+size+1] = FLAG;
 	
+	if(rand()%10 <= 1) {
+		printf("LLWRITE - Generating mistake on frame\n");
+		buffer[rand()%(4+size+1)] = 0xFF;
+	}
+	
 
 	if (DEBUG) printf("LLWRITE - Sending and Waiting\n");
     bytesWritten = timeoutAndSend(buffer,4+size+2);
@@ -383,13 +388,12 @@ int llread(char *buffer){
     if(buffer[3] != getBCC(buffer+1,2)){
         printf("LLREAD - Wrong BCC-1, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);
         
-        return -1;     
+		goto retry;
     }else if(buffer[2] == CTRL_CTRL[ll.sequenceNumber] /*&& checkDataBCC() && checkControlBCC()*/ ){
         
         if(buffer[size-2] != getBCC(dataBuffer,dataSize)){
             printf("LLREAD - Wrong BCC-2, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(dataBuffer,dataSize),(unsigned char)buffer[size-2]);
-            
-            return -1;
+            goto retry;
         }   
 
 		retBuffer[0] = FLAG;
