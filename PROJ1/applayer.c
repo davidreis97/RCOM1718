@@ -28,7 +28,7 @@ void printProgress(int percentage, char message[], int divisions){
 	int i = 0;
 	if(percentage > 100) percentage = 100;
 	printf("\r[%s]: [",message);
-	for(int i = 0; i <= 100; i += divisions){
+	for(i = 0; i <= 100; i += divisions){
 		if(percentage < i){
 			printf(" ");
 		}else{

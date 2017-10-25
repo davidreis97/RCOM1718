@@ -191,6 +191,11 @@ int timeoutAndSend(char *sendBuffer, unsigned int size){
 			alarm(ll.timeout);
 			TIMEOUT_APPLIED=1;
 
+		if(rand()%100 <= PERC_ERR) {
+			printf("TIMEOUTANDSEND - Generating random mistake on frame\n");
+			buffer[rand()%(4+size+1)] = 0xFF;
+		}
+
 	        bytesWritten = send(sendBuffer,size);
 
             if (DEBUG) printf("TIMEOUTANDSEND - Sent %d bytes and applied timeout to %ds\n",bytesWritten, ll.timeout);
@@ -257,12 +262,6 @@ int llwrite(char *packet, unsigned int size){
     memcpy(buffer+4,packet,size);
    	buffer[4+size] = getBCC(buffer+4,size); //Block Check Character 2(BCC2)
     buffer[4+size+1] = FLAG;
-	
-	if(rand()%10 <= 1) {
-		printf("LLWRITE - Generating mistake on frame\n");
-		buffer[rand()%(4+size+1)] = 0xFF;
-	}
-	
 
 	if (DEBUG) printf("LLWRITE - Sending and Waiting\n");
     bytesWritten = timeoutAndSend(buffer,4+size+2);
