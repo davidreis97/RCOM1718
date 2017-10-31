@@ -77,6 +77,10 @@ int getFileSize(unsigned char *buffer){
 	return 0;
 }
 
+char getFileBCC(){
+	//TODO
+}
+
 int getFileName(char *buffer){
 	memcpy(al.filename,buffer,S_NAME);
 
@@ -145,18 +149,23 @@ int sendEnd(){ //Add more stuff? If not, move to add data and receive data
 	char buffer[APP_PACKET_SIZE];
 
 	buffer[0] = C_END;
+	//buffer[1] = getFileBCC();
 
 	if(llwrite(buffer, APP_PACKET_SIZE) <= 0){
 		printf("SENDEND: Could not send end packet\n");
+		return -1;
+	}else{
+		return 0;
 	}
 }
 
 int receiveEnd(char *buffer){
-	if(buffer[0] == C_END) {
-		return 0;
-	}else{
-		printf("RECEIVEEND: Received unknown package\n");
-	}
+	if(buffer[0] != C_END){
+		printf("RECEIVEEND: Expected end packet (%x) but got (%x)\n",C_END,buffer[0]);
+		return -1;
+	}/*else if(buffer[1] != getFileBCC()){
+		printf("RECEIVEEND: Got wrong file BCC, expected (%x) got (%x)",getFileBCC(), buffer[1]);
+	}*/
 }
 
 int receiveData(){
@@ -303,6 +312,8 @@ int processArgs(int argc, char*argv[]){
 
 int main(int argc, char*argv[]){
     
+	srand(time(NULL));
+
 	if (processArgs(argc, argv) != 0){
 		return -1;
 	}
