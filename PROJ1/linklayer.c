@@ -64,13 +64,13 @@ void generateError(char *buffer, int size){
 }
 
 char getBCC(char *buffer, int size){
-    char bcc = 0; //TODO incluir o proprio bcc na conta????
+    char bcc = 0;
     int i;
 
     for (i = 0; i < size; i++){
         bcc ^= buffer[i];
     }
-
+    
     return bcc;
 }
 

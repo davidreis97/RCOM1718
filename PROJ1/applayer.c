@@ -6,9 +6,11 @@ const char C_END = 3;
 
 const char T_SIZE = 0;
 const char T_NAME = 1;
+const char T_BCC = 2;
 
 const char S_SIZE = 4; 
 const unsigned char S_NAME = 255;
+const unsigned char S_BCC = 1;
 
 const int APP_BUFFER_SIZE = 65525; //2^16 - 10 bits for link layer
 int APP_PACKET_SIZE = 255;
@@ -78,7 +80,25 @@ int getFileSize(unsigned char *buffer){
 }
 
 char getFileBCC(){
-	//TODO
+	al.fd = open(al.filename,O_RDONLY);
+    char current;
+    char bcc = 0;
+    int bytes;
+    int totalBytes = 0;
+
+    do{
+        bytes = read(al.fd,&current,1);
+        totalBytes += bytes;
+        
+        bcc ^= current;
+    }while(bytes > 0);
+
+    if (totalBytes != al.expectedSize){
+        printf("GETFILEBCC - Error getting file BCC, total bytes (%d) do not match expected file size (%d)\n",totalBytes,al.expectedSize);    
+    }
+    
+    printf("Calculated BCC: %x\n",bcc);
+    return bcc;
 }
 
 int getFileName(char *buffer){
@@ -145,11 +165,11 @@ int receiveStart(){ //FIX - File name not making it completely sometimes
 	printf("RECEIVESTART: Found file called %s with a size of %d bytes\n",al.filename,al.expectedSize);
 }
 
-int sendEnd(){ //Add more stuff? If not, move to add data and receive data
+int sendEnd(){
 	char buffer[APP_PACKET_SIZE];
 
 	buffer[0] = C_END;
-	//buffer[1] = getFileBCC();
+	buffer[1] = getFileBCC();
 
 	if(llwrite(buffer, APP_PACKET_SIZE) <= 0){
 		printf("SENDEND: Could not send end packet\n");
@@ -163,9 +183,13 @@ int receiveEnd(char *buffer){
 	if(buffer[0] != C_END){
 		printf("RECEIVEEND: Expected end packet (%x) but got (%x)\n",C_END,buffer[0]);
 		return -1;
-	}/*else if(buffer[1] != getFileBCC()){
-		printf("RECEIVEEND: Got wrong file BCC, expected (%x) got (%x)",getFileBCC(), buffer[1]);
-	}*/
+	}
+
+    printf("Received %x\n",buffer[2]);
+    
+    if(buffer[1] == T_BCC && buffer[2] != getFileBCC()){
+        printf("RECEIVEEND: Error calculating/receiving BCC\n");    
+    }
 
     return 0;
 }
