@@ -20,6 +20,9 @@ int DEBUG;
 char PREVIOUS_BCC2;
 char PREVIOUS_FIRST_BYTE;
 
+int ERROR_PERCENTAGE;
+int DELAY;
+
 LINK_LAYER ll;
 
 int TIMEOUT_APPLIED = 0; int TIMEOUT_TRIES;
@@ -28,8 +31,16 @@ void setDebug(int d){
     DEBUG = d;
 }
 
+void setDelay(int delay){
+    DELAY = delay;
+}
+
 int getDebug(){
     return DEBUG;
+}
+
+void setError(int percentage){
+    ERROR_PERCENTAGE = percentage;
 }
 
 void setLL(LINK_LAYER linklayer){
@@ -40,15 +51,16 @@ LINK_LAYER getLL(){
     return ll;
 }
 
-void generateError(char *buffer, int size, int percentage){
+void generateError(char *buffer, int size){
     buffer++; //Avoids changing the initial and last bit, which are errors usually corrected while stuffing
     size -= 2; 
-    if(rand()%100 < percentage){
+    if(rand()%100 < ERROR_PERCENTAGE){
         printf("GENERATEERROR - Generating random mistake on frame\n");
         buffer[rand()%size] = 0xFF;
     }else{
-        printf("GENERATEERROR - No error in this frame\n");
+        if (DEBUG) printf("GENERATEERROR - No error in this frame\n");
     }
+    usleep(DELAY);
 }
 
 char getBCC(char *buffer, int size){
@@ -183,7 +195,7 @@ int receive(char *buffer){
         }   
     }
 
-    generateError(buffer,n+1,70);
+    generateError(buffer,n+1);
     
     if (DEBUG) printBuffer(buffer,n+1,"RECEIVED - no destuffing");
     int destuffedSize = byteDestuffing(buffer,n+1);
@@ -249,6 +261,7 @@ int timeoutAndSend(char *sendBuffer, unsigned int size){
         printf("TIMEOUTANDSEND - Timed out after %d tries. \n", ll.numTransmissions);
         return -1;
     }else{
+        generateError(receiveBuffer,n+1);
         memcpy(sendBuffer,receiveBuffer,BUFFER_SIZE);
     }
 

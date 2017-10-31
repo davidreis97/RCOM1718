@@ -166,6 +166,8 @@ int receiveEnd(char *buffer){
 	}/*else if(buffer[1] != getFileBCC()){
 		printf("RECEIVEEND: Got wrong file BCC, expected (%x) got (%x)",getFileBCC(), buffer[1]);
 	}*/
+
+    return 0;
 }
 
 int receiveData(){
@@ -280,6 +282,9 @@ int processArgs(int argc, char*argv[]){
 	ll.numTransmissions = 3;
 	al.progress = 0;
 	ll.status = RECEIVER;
+
+    int error = 0;
+    int delay = 0;
 	
 	for(i = 1; i < argc; i++){
 		if(strcmp(argv[i],"--debug") == 0){
@@ -293,10 +298,16 @@ int processArgs(int argc, char*argv[]){
 			ll.port = argv[i];
 		}else if(strcmp(argv[i],"-t") == 0 && i+1 < argc){
 			i++;
-			ll.timeout = atoi(argv[i]);
+			ll.numTransmissions = atoi(argv[i]);
 		}else if(strcmp(argv[i],"-ps") == 0 && i+1 < argc){
 			i++;
 			APP_PACKET_SIZE = atoi(argv[i]);
+   		}else if(strcmp(argv[i],"-d") == 0 && i+1 < argc){
+			i++;
+			delay = atoi(argv[i]);
+   		}else if(strcmp(argv[i],"-err") == 0 && i+1 < argc){
+			i++;
+			error = atoi(argv[i]);
 		}else if(strcmp(argv[i],"--progress") == 0){
 			al.progress = 1;
 		}else{
@@ -304,7 +315,9 @@ int processArgs(int argc, char*argv[]){
 			return -1;
 		}
 	}	
-
+    
+    setDelay(delay);
+    setError(error);
 	setLL(ll);
 
 	return 0;
