@@ -13,7 +13,7 @@ const unsigned char S_NAME = 255;
 const unsigned char S_BCC = 1;
 
 const int APP_BUFFER_SIZE = 65525; //2^16 - 10 bits for link layer
-int APP_PACKET_SIZE = 255;
+int MAX_APP_PACKET_SIZE = 255;
 
 
 typedef struct appLayer {
@@ -97,7 +97,6 @@ char getFileBCC(){
         printf("GETFILEBCC - Error getting file BCC, total bytes (%d) do not match expected file size (%d)\n",totalBytes,al.expectedSize);    
     }
     
-    printf("Calculated BCC: %x\n",bcc);
     return bcc;
 }
 
@@ -166,12 +165,15 @@ int receiveStart(){ //FIX - File name not making it completely sometimes
 }
 
 int sendEnd(){
-	char buffer[APP_PACKET_SIZE];
+	char buffer[MAX_APP_PACKET_SIZE];
+	bzero(buffer,MAX_APP_PACKET_SIZE);
 
 	buffer[0] = C_END;
-	buffer[1] = getFileBCC();
+	buffer[1] = T_BCC;
+	buffer[2] = S_BCC;
+	buffer[3] = getFileBCC();
 
-	if(llwrite(buffer, APP_PACKET_SIZE) <= 0){
+	if(llwrite(buffer, 4) <= 0){
 		printf("SENDEND: Could not send end packet\n");
 		return -1;
 	}else{
@@ -184,11 +186,14 @@ int receiveEnd(char *buffer){
 		printf("RECEIVEEND: Expected end packet (%x) but got (%x)\n",C_END,buffer[0]);
 		return -1;
 	}
-
-    printf("Received %x\n",buffer[2]);
     
-    if(buffer[1] == T_BCC && buffer[2] != getFileBCC()){
-        printf("RECEIVEEND: Error calculating/receiving BCC\n");    
+    if(buffer[1] == T_BCC && buffer[2] == S_BCC){
+    	char bcc = getFileBCC();
+        if(buffer[3] != bcc){
+        	printf("RECEIVEEND - Wrong file BCC, received %x expected %x\n", buffer[3],bcc);
+        }
+    }else{
+    	printf("RECEIVEEND - Could not find file BCC in end packet, received %x - %x expected %x - %x",buffer[1],buffer[2],T_BCC,S_BCC);
     }
 
     return 0;
@@ -265,13 +270,13 @@ int receiveData(){
 
 int sendData(){
 	int bRead = 0, totalread = 0;
-	char buffer[APP_PACKET_SIZE];
+	char buffer[MAX_APP_PACKET_SIZE];
 
 	do{
 		buffer[0] = C_DATA;
 		buffer[1] = al.sequenceNumber++;
-		bzero(buffer+4,APP_PACKET_SIZE-4);
-		bRead = read(al.fd, buffer+4, APP_PACKET_SIZE-4);
+		bzero(buffer+4,MAX_APP_PACKET_SIZE-4);
+		bRead = read(al.fd, buffer+4, 5 + rand()%(MAX_APP_PACKET_SIZE-9));
 		totalread += bRead;
 
 		if (!getDebug() && al.progress) printProgress((totalread*100/al.expectedSize), al.filename, 5);
@@ -325,7 +330,7 @@ int processArgs(int argc, char*argv[]){
 			ll.numTransmissions = atoi(argv[i]);
 		}else if(strcmp(argv[i],"-ps") == 0 && i+1 < argc){
 			i++;
-			APP_PACKET_SIZE = atoi(argv[i]);
+			MAX_APP_PACKET_SIZE = atoi(argv[i]);
    		}else if(strcmp(argv[i],"-d") == 0 && i+1 < argc){
 			i++;
 			delay = atoi(argv[i]);
@@ -335,7 +340,7 @@ int processArgs(int argc, char*argv[]){
 		}else if(strcmp(argv[i],"--progress") == 0){
 			al.progress = 1;
 		}else{
-			printf("Usage: %s [--debug] [-T : Set file to send (RECEIVER by default)] [-p : Set port (%s by default)] [-t : Set timeout (%d by default)] [-ps : Set packet size (%d by default)] [--progress : Show transfer progress (%d by default)]\n" ,argv[0], ll.port, ll.timeout, APP_PACKET_SIZE, al.progress);
+			printf("Usage: %s [--debug] [-T : Set file to send (RECEIVER by default)] [-p : Set port (%s by default)] [-t : Set timeout (%d by default)] [-ps : Set packet size (%d by default)] [--progress : Show transfer progress (%d by default)]\n" ,argv[0], ll.port, ll.timeout, MAX_APP_PACKET_SIZE, al.progress);
 			return -1;
 		}
 	}	
