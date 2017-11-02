@@ -377,9 +377,9 @@ int llclose(){
         bytesWritten = timeoutAndSend(buffer,5);
         
         if(bytesWritten == -1){
-            printf("LLCLOSE - Timed out too many times.\n");
+            printf("LLCLOSE - Timed out too many times. Assuming transmitter already ended.\n");
         
-            return -1;     
+            return 0;     
         }else if(buffer[3] != getBCC(buffer+1,2)){
             printf("LLCLOSE - Wrong BCC, Expected (%02X) but got (%02X)\n",(unsigned char)getBCC(buffer+1,2),(unsigned char)buffer[3]);  
             
@@ -412,7 +412,7 @@ int llread(char *buffer){
     
     size = receive(buffer);
 
-    if (DEBUG) printBuffer(buffer,size,"LLREAD - Received");
+    if (DEBUG) printBuffer(buffer,size,"LLREAD - Received\n");
 
     char retBuffer[BUFFER_SIZE];
     bzero(retBuffer, BUFFER_SIZE);
@@ -435,7 +435,7 @@ int llread(char *buffer){
         
         goto retry;
     }else if(buffer[3] == PREVIOUS_BCC2 && dataBuffer[0] == PREVIOUS_FIRST_BYTE && buffer[2] == CTRL_CTRL[1 - ll.sequenceNumber]){
-        printf("LLREAD - Caught previously received packet, resending RR");
+        printf("LLREAD - Caught previously received packet, resending RR\n");
 
         retBuffer[0] = FLAG;
         retBuffer[1] = SENDER_ADDRESS;
