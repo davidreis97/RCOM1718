@@ -104,9 +104,9 @@ int connectToData(char data[][cf.maxSize], struct sockaddr_in *server_addr){
 	return cf.datafd;
 }
 
-int downloadFile(int fd){
+int downloadFile(int fd, char *filename){
 	int bytes;
-	int file = open("./download.zip", O_WRONLY | O_APPEND | O_CREAT, 0666);
+	int file = open(filename, O_WRONLY | O_APPEND | O_CREAT | O_EXCL, 0666);
 
 	do{
 		char buffer[cf.maxSize];
@@ -126,9 +126,12 @@ int downloadFile(int fd){
 int main(int argc, char** argv){
 	char wrBuf[256];
 	char rdBuf[256];
+	char msg[256];
 	struct sockaddr_in server_addr, data_server_addr;
 	int	bytes;
 	struct hostent *h;
+
+	char *filename = "pinguimHires.jpg"; //TODO - Get from argv?
 
 	cf.maxSize = 2048;
 	cf.serverPort = 21;
@@ -170,7 +173,7 @@ int main(int argc, char** argv){
 		return 1;
 	}
 
-	if(sendMsg("USER anonymous\n",cf.sockfd) <= 0){
+	if(sendMsg("USER up201607927\n",cf.sockfd) <= 0){
 		return 1;
 	}
 
@@ -178,7 +181,7 @@ int main(int argc, char** argv){
 		return 1;
 	}
 
-	if(sendMsg("PASS  \n",cf.sockfd) <= 0){
+	if(sendMsg("PASS \n",cf.sockfd) <= 0){
 		return 1;
 	}
 
@@ -213,7 +216,12 @@ int main(int argc, char** argv){
 
 	*/
 
-	if(sendMsg("RETR 100KB.zip\n",cf.sockfd) <= 0){
+	
+	strcpy(msg,"RETR ");
+	strcat(msg,filename);
+	strcat(msg,"\n");
+
+	if(sendMsg(msg,cf.sockfd) <= 0){
 		return 1;
 	}
 
@@ -221,7 +229,7 @@ int main(int argc, char** argv){
 		return 1;
 	}
 	
-	downloadFile(cf.datafd);
+	downloadFile(cf.datafd,filename);
 
 	if(receiveMsg(rdBuf,cf.sockfd) != 226){
 		return 1;
