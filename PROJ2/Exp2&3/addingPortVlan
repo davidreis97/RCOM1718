@@ -1,0 +1,202 @@
+
+tux-sw1>
+tux-sw1>
+tux-sw1>
+tux-sw1>
+tux-sw1>enable
+Password: 
+tux-sw1#vlan y()   10
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#vlan ?
+% Unrecognized command
+tux-sw1#vlan 10    help
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#help
+Help may be requested at any point in a command by entering
+a question mark '?'.  If nothing matches, the help list will
+be empty and you must backup until entering a '?' shows the
+available options.
+Two styles of help are provided:
+1. Full help is available when you are ready to enter a
+   command argument (e.g. 'show ?') and describes each possible
+   argument.
+2. Partial help is provided when an abbreviated argument is entered
+   and you want to know what arguments match the input
+   (e.g. 'show pr?'.)
+
+tux-sw1#crete  atee 
+Translating "create"...domain server (255.255.255.255)
+% Unknown command or computer name, or unable to find computer address
+tux-sw1#creae te vlan
+          ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#create vlan           vlan
+% Incomplete command.
+
+tux-sw1#vlan
+% Incomplete command.
+
+tux-sw1#vlan 10
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#vlan 10  y0
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#vlan y0  ?
+% Unrecognized command
+tux-sw1#vlan 10   
+% Incomplete command.
+
+tux-sw1#vlan craet   eate
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#vlan create      eab  nable
+             ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#vlan enable           configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+tux-sw1(config)#vlan 10
+tux-sw1(config-vlan)#end
+tux-sw1#sh
+*Mar  1 03:29:36.678: %SYS-5-CONFIG_I: Configured from console by consoleo 
+% Type "show ?" for a list of subcommands
+tux-sw1#shw ow vlan v12   10
+                  ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#show vlan 10   
+
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/2, Fa0/3, Fa0/4, Fa0/5
+                                                Fa0/6, Fa0/7, Fa0/8, Fa0/9
+                                                Fa0/10, Fa0/11, Fa0/12, Fa0/13
+                                                Fa0/14, Fa0/15, Fa0/16, Fa0/17
+                                                Fa0/18, Fa0/19, Fa0/20, Fa0/21
+                                                Fa0/22, Fa0/23, Fa0/24, Gi0/1
+                                                Gi0/2
+10   VLAN0010                         active    Fa0/1
+1002 fddi-default                     act/unsup 
+1003 token-ring-default               act/unsup 
+1004 fddinet-default                  act/unsup 
+1005 trnet-default                    act/unsup 
+
+VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+1    enet  100001     1500  -      -      -        -    -        0      0   
+10   enet  100010     1500  -      -      -        -    -        0      0   
+1002 fddi  101002     1500  -      -      -        -    -        0      0   
+1003 tr    101003     1500  -      -      -        -    srb      0      0   
+1004 fdnet 101004     1500  -      -      -        ieee -        0      0   
+ --More--         
+tux-sw1#[Ashow vlan
+
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/2, Fa0/3, Fa0/4, Fa0/5
+                                                Fa0/6, Fa0/7, Fa0/8, Fa0/9
+                                                Fa0/10, Fa0/11, Fa0/12, Fa0/13
+                                                Fa0/14, Fa0/15, Fa0/16, Fa0/17
+                                                Fa0/18, Fa0/19, Fa0/20, Fa0/21
+                                                Fa0/22, Fa0/23, Fa0/24, Gi0/1
+                                                Gi0/2
+10   VLAN0010                         active    Fa0/1
+1002 fddi-default                     act/unsup 
+1003 token-ring-default               act/unsup 
+1004 fddinet-default                  act/unsup 
+1005 trnet-default                    act/unsup 
+
+VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+1    enet  100001     1500  -      -      -        -    -        0      0   
+10   enet  100010     1500  -      -      -        -    -        0      0   
+1002 fddi  101002     1500  -      -      -        -    -        0      0   
+1003 tr    101003     1500  -      -      -        -    srb      0      0   
+1004 fdnet 101004     1500  -      -      -        ieee -        0      0   
+ --More--         
+VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+1005 trnet 101005     1500  -      -      -        ibm  -        0      0   
+
+Remote SPAN VLANs
+------------------------------------------------------------------------------
+
+
+Primary Secondary Type              Ports
+------- --------- ----------------- ------------------------------------------
+
+tux-sw1#nconfi      configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+tux-sw1(config)#intera face fastethenrB+ B+     rnet 0/43  3
+tux-sw1(config-if)#switchpor  t mode
+% Incomplete command.
+
+tux-sw1(config-if)#switchport mode access
+tux-sw1(config-if)#switchport access vlan 10
+tux-sw1(config-if)#end
+tux-sw1#
+*Mar  1 03:34:10.290: %SYS-5-CONFIG_I: Configured from console by consoled 
+tux-sw1#show running-config interfc ace a faste ethernet 0/3
+Building configuration...
+
+Current configuration : 84 bytes
+!
+interface FastEthernet0/3
+ switchport access vlan 10
+ switchport mode access
+end
+
+tux-sw1#shw ow interfaces fastethernet 0/3 3
+                                         ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#show interfaces fastethernet 0/3 3F3a303/3
+                                           ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#show interfaces fastethernet 0/3 Fa0/30/3 0/3 0/3 3 F3a3
+                                           ^
+% Invalid input detected at '^' marker.
+
+tux-sw1#show interfaces fastethernet 0/3 Fa3                                    show vala   lan
+
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Fa0/2, Fa0/4, Fa0/5, Fa0/6
+                                                Fa0/7, Fa0/8, Fa0/9, Fa0/10
+                                                Fa0/11, Fa0/12, Fa0/13, Fa0/14
+                                                Fa0/15, Fa0/16, Fa0/17, Fa0/18
+                                                Fa0/19, Fa0/20, Fa0/21, Fa0/22
+                                                Fa0/23, Fa0/24, Gi0/1, Gi0/2
+10   VLAN0010                         active    Fa0/1, Fa0/3
+1002 fddi-default                     act/unsup 
+1003 token-ring-default               act/unsup 
+1004 fddinet-default                  act/unsup 
+1005 trnet-default                    act/unsup 
+
+VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+1    enet  100001     1500  -      -      -        -    -        0      0   
+10   enet  100010     1500  -      -      -        -    -        0      0   
+1002 fddi  101002     1500  -      -      -        -    -        0      0   
+1003 tr    101003     1500  -      -      -        -    srb      0      0   
+1004 fdnet 101004     1500  -      -      -        ieee -        0      0   
+1005 trnet 101005     1500  -      -      -        ibm  -        0      0   
+ --More--         
+Remote SPAN VLANs
+------------------------------------------------------------------------------
+
+
+Primary Secondary Type              Ports
+------- --------- ----------------- ------------------------------------------
+
+tux-sw1#

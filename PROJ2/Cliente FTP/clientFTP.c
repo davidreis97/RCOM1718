@@ -16,14 +16,18 @@ typedef struct clientFTP {
 	int serverPort, dataServerPort;
 	char *serverAddr, *dataServerAddr;
 	int maxSize;
+	int authenticating;
 }CLIENT_FTP;
 
+typedef struct ftpUrl {
+	char username[256];
+	char password[256];
+	char host[256];
+	char filepath[256];
+}FTP_URL;
+
+FTP_URL fu;
 CLIENT_FTP cf;
-
-/* --PROBLEMS-- 
-	- Download is not downloading the right size and is filling file with 0s
-*/
-
 
 int sendMsg(char * msg, int fd){
 	printf("SENT: %s\n", msg);
@@ -123,7 +127,21 @@ int downloadFile(int fd, char *filename){
 	return 0;
 }
 
-int main(int argc, char** argv){
+void parser(int argc, char *argv[]) {
+	if (sscanf(argv[1],"ftp://%[^:]%*[:]%[^@]%*[@]%[^/]%s", fu.username, fu.password, fu.host, fu.filepath) == 4) {
+		cf.authenticating = 1;
+		printf("\nUsername: [%s]\nHost: [%s]\nFilepath: [%s]\n\n", fu.username, /*fu.password,*/ fu.host, fu.filepath);
+	}else if (sscanf(argv[1],"ftp://%[^/]%s", fu.host, fu.filepath) == 2){
+		cf.authenticating = 0;
+		printf("Warning: Couldn't parse any authentication\n\n"); //TODO - Fallback not working (solution: try to find @ or : in the string)
+		printf("Host: [%s]\nFilepath: [%s]\n\n", fu.host, fu.filepath);
+	}else{
+		printf("Error: Couldn't parse ftp url\n");
+		exit(1);
+	}
+}
+
+int main(int argc, char* argv[]){
 	char wrBuf[256];
 	char rdBuf[256];
 	char msg[256];
@@ -131,23 +149,23 @@ int main(int argc, char** argv){
 	int	bytes;
 	struct hostent *h;
 
-	char *filename = "pinguimHires.jpg"; //TODO - Get from argv?
+	if (argc != 2) {
+		printf("Usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n",argv[0]);
+		exit(1);
+	}
+
+	parser(argc, argv);
 
 	cf.maxSize = 2048;
 	cf.serverPort = 21;
 
-    if(argc != 2) {
-        fprintf(stderr, "Usage: %s hostname\n", argv[0]);
-        return 0;
-    }
-
-    if((h=gethostbyname(argv[1])) == NULL) {
+    if((h=gethostbyname(fu.host)) == NULL) {
         herror("gethostbyname(): ");
         return 0;
     }
     else {
         cf.serverAddr = inet_ntoa(*((struct in_addr *)h->h_addr));
-    	printf("Connecting to: %s\n",cf.serverAddr);
+    	printf("Connecting to: %s:%d\n",cf.serverAddr, cf.serverPort);
     }
 
 	
@@ -173,20 +191,31 @@ int main(int argc, char** argv){
 		return 1;
 	}
 
-	if(sendMsg("USER up201607927\n",cf.sockfd) <= 0){
-		return 1;
-	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 331){
-		return 1;
-	}
+	if(cf.authenticating){
+		strcpy(msg,"USER ");
+		strcat(msg,fu.username);
+		strcat(msg,"\n");
 
-	if(sendMsg("PASS \n",cf.sockfd) <= 0){
-		return 1;
-	}
+		if(sendMsg(msg,cf.sockfd) <= 0){
+			return 1;
+		}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 230){
-		return 1;
+		if(receiveMsg(rdBuf,cf.sockfd) != 331){
+			return 1;
+		}
+
+		strcpy(msg,"PASS ");
+		strcat(msg,fu.password);
+		strcat(msg,"\n");
+
+		if(sendMsg(msg,cf.sockfd) <= 0){
+			return 1;
+		}
+
+		if(receiveMsg(rdBuf,cf.sockfd) != 230){
+			return 1;
+		}
 	}
 
 	if(sendMsg("PASV\n",cf.sockfd) <= 0){
@@ -202,7 +231,7 @@ int main(int argc, char** argv){
 	tokenize(rdBuf,responseBuffer,'(',')',',');
 	connectToData(responseBuffer,&data_server_addr);
 
-	/*
+	/* //LIST DIRECTORY
 	
 	if(sendMsg("LIST\n",cf.sockfd) <= 0){
 		return 1;
@@ -218,7 +247,7 @@ int main(int argc, char** argv){
 
 	
 	strcpy(msg,"RETR ");
-	strcat(msg,filename);
+	strcat(msg,fu.filepath);
 	strcat(msg,"\n");
 
 	if(sendMsg(msg,cf.sockfd) <= 0){
@@ -229,7 +258,7 @@ int main(int argc, char** argv){
 		return 1;
 	}
 	
-	downloadFile(cf.datafd,filename);
+	downloadFile(cf.datafd,fu.filepath);
 
 	if(receiveMsg(rdBuf,cf.sockfd) != 226){
 		return 1;
@@ -246,5 +275,3 @@ int main(int argc, char** argv){
 	close(cf.sockfd);
 	return 0;
 }
-
-
