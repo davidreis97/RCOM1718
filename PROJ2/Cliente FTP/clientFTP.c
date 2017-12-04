@@ -1,33 +1,4 @@
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <strings.h>
-
-typedef struct clientFTP {
-	int sockfd, datafd;
-	int serverPort, dataServerPort;
-	char *serverAddr, *dataServerAddr;
-	int maxSize;
-	int authenticating;
-}CLIENT_FTP;
-
-typedef struct ftpUrl {
-	char username[256];
-	char password[256];
-	char host[256];
-	char filepath[256];
-}FTP_URL;
-
-FTP_URL fu;
-CLIENT_FTP cf;
+#include "clientFTP.h"
 
 int sendMsg(char * msg, int fd){
 	printf("SENT: %s\n", msg);
@@ -35,23 +6,23 @@ int sendMsg(char * msg, int fd){
 }
 
 int receiveMsg(char * msg, int fd){
-	bzero(msg,cf.maxSize);
-	read(fd, msg, cf.maxSize);
+	bzero(msg,MAX_SIZE);
+	read(fd, msg, MAX_SIZE);
 	printf("RECEIVED: %s\n", msg);
 
 	return atoi(msg);
 }
 
-int tokenize(char *buf, char data[][cf.maxSize], char initChar, char endChar, char splitChar){
+int tokenize(char *buf, char data[][MAX_SIZE], char initChar, char endChar, char splitChar){
 	int i = 0, j = 0, k = 0;
-	for (i = 0; i < cf.maxSize ;i++){
+	for (i = 0; i < MAX_SIZE ;i++){
 		if(buf[i] == initChar){
 			i++;
 			break;
 		}
 	}
 
-	for(j = 0; j < cf.maxSize && i < cf.maxSize; i++){
+	for(j = 0; j < MAX_SIZE && i < MAX_SIZE; i++){
 		if(buf[i] == splitChar){
 			data[k][j] = '\0';
 			j = 0;
@@ -70,10 +41,10 @@ int tokenize(char *buf, char data[][cf.maxSize], char initChar, char endChar, ch
 	return 0;
 }
 
-int connectToData(char data[][cf.maxSize], struct sockaddr_in *server_addr){
+int connectToData(char data[][MAX_SIZE], struct sockaddr_in *server_addr){
 	
-	cf.dataServerAddr = malloc(cf.maxSize);
-	bzero(cf.dataServerAddr,cf.maxSize);
+	cf.dataServerAddr = malloc(MAX_SIZE);
+	bzero(cf.dataServerAddr,MAX_SIZE);
 
 	strcpy(cf.dataServerAddr,data[0]);
 	strcat(cf.dataServerAddr,".");
@@ -113,10 +84,10 @@ int downloadFile(int fd, char *filename){
 	int file = open(filename, O_WRONLY | O_APPEND | O_CREAT | O_EXCL, 0666);
 
 	do{
-		char buffer[cf.maxSize];
-		bzero(buffer,cf.maxSize);
+		char buffer[MAX_SIZE];
+		bzero(buffer,MAX_SIZE);
 
-		if((bytes = read(fd, buffer, cf.maxSize)) < 0){
+		if((bytes = read(fd, buffer, MAX_SIZE)) < 0){
 			printf("Couldn't read from server");
 		}
 		if (write(file,buffer,bytes) < 0){
@@ -142,9 +113,9 @@ void parser(int argc, char *argv[]) {
 }
 
 int main(int argc, char* argv[]){
-	char wrBuf[256];
-	char rdBuf[256];
-	char msg[256];
+	char wrBuf[MAX_SIZE];
+	char rdBuf[MAX_SIZE];
+	char msg[MAX_SIZE];
 	struct sockaddr_in server_addr, data_server_addr;
 	int	bytes;
 	struct hostent *h;
@@ -156,7 +127,6 @@ int main(int argc, char* argv[]){
 
 	parser(argc, argv);
 
-	cf.maxSize = 2048;
 	cf.serverPort = 21;
 
     if((h=gethostbyname(fu.host)) == NULL) {
@@ -187,7 +157,7 @@ int main(int argc, char* argv[]){
 		exit(0);
 	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 220){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_READY){
 		return 1;
 	}
 
@@ -201,7 +171,7 @@ int main(int argc, char* argv[]){
 			return 1;
 		}
 
-		if(receiveMsg(rdBuf,cf.sockfd) != 331){
+		if(receiveMsg(rdBuf,cf.sockfd) != FTP_NEED_PASSWORD){ //ALWAYS ASSUMES PASSWORD IS NEEDED
 			return 1;
 		}
 
@@ -213,7 +183,7 @@ int main(int argc, char* argv[]){
 			return 1;
 		}
 
-		if(receiveMsg(rdBuf,cf.sockfd) != 230){
+		if(receiveMsg(rdBuf,cf.sockfd) != FTP_LOGGED_IN){
 			return 1;
 		}
 	}
@@ -222,11 +192,11 @@ int main(int argc, char* argv[]){
 		return 1;
 	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 227){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_ENTERED_PASSIVE_MODE){
 		return 1;
 	}	
 
-	char responseBuffer[6][cf.maxSize];
+	char responseBuffer[6][MAX_SIZE];
 
 	tokenize(rdBuf,responseBuffer,'(',')',',');
 	connectToData(responseBuffer,&data_server_addr);
@@ -237,7 +207,7 @@ int main(int argc, char* argv[]){
 		return 1;
 	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 150){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_FILE_STATUS_OK){
 		return 1;
 	}
 	
@@ -254,13 +224,13 @@ int main(int argc, char* argv[]){
 		return 1;
 	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 150){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_FILE_STATUS_OK){
 		return 1;
 	}
 	
 	downloadFile(cf.datafd,fu.filepath);
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 226){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_CLOSING_DATA_CONNECTION){
 		return 1;
 	}
 
@@ -268,7 +238,7 @@ int main(int argc, char* argv[]){
 		return 1;
 	}
 
-	if(receiveMsg(rdBuf,cf.sockfd) != 221){
+	if(receiveMsg(rdBuf,cf.sockfd) != FTP_CLOSING_CONTROL_CONNECTION){
 		return 1;
 	}
 
