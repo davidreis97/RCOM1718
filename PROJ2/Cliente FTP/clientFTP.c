@@ -99,12 +99,12 @@ int downloadFile(int fd, char *filename){
 }
 
 void parser(int argc, char *argv[]) {
-	if (sscanf(argv[1],"ftp://%[^:]%*[:]%[^@]%*[@]%[^/]%s", fu.username, fu.password, fu.host, fu.filepath) == 4) {
+	if (sscanf(argv[1],"ftp://%[^:]%*[:]%[^@]%*[@]%[^/]%*[/]%s", fu.username, fu.password, fu.host, fu.filepath) == 4) {
 		cf.authenticating = 1;
 		printf("\nUsername: [%s]\nHost: [%s]\nFilepath: [%s]\n\n", fu.username, /*fu.password,*/ fu.host, fu.filepath);
-	}else if (sscanf(argv[1],"ftp://%[^/]%s", fu.host, fu.filepath) == 2){
+	}else if (sscanf(argv[1],"ftp://%[^/]%*[/]%s", fu.host, fu.filepath) == 2){
 		cf.authenticating = 0;
-		printf("Warning: Couldn't parse any authentication\n\n"); //TODO - Fallback not working (solution: try to find @ or : in the string)
+		printf("Warning: Couldn't parse any authentication\n\n");
 		printf("Host: [%s]\nFilepath: [%s]\n\n", fu.host, fu.filepath);
 	}else{
 		printf("Error: Couldn't parse ftp url\n");
@@ -171,7 +171,7 @@ int main(int argc, char* argv[]){
 			return 1;
 		}
 
-		if(receiveMsg(rdBuf,cf.sockfd) != FTP_NEED_PASSWORD){ //ALWAYS ASSUMES PASSWORD IS NEEDED
+		if(receiveMsg(rdBuf,cf.sockfd) != FTP_NEED_PASSWORD){
 			return 1;
 		}
 
