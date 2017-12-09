@@ -1,0 +1,127 @@
+0- Configurar cabos:
+
+tux1 eth0 -> 1
+tux2 eth0 -> 13
+tux4 eth0 -> 2
+tux4 eth1 -> 14
+router    -> 15
+
+1- VLANs (no Switch):
+
+configure terminal
+vlan 10
+end
+configure terminal
+vlan 11
+end
+
+show vlan
+
+2- Adicionar portas as vlans (segundo ponto 0, alterar conforme necessario):
+
+conf term
+interface fastethernet 0/1
+switchport mode access
+switchport access vlan 10
+end
+
+conf term
+interface fastethernet 0/2
+switchport mode access
+switchport access vlan 10
+end
+
+conf term
+interface fastethernet 0/13
+switchport mode access
+switchport access vlan 11
+end
+
+conf term
+interface fastethernet 0/14
+switchport mode access
+switchport access vlan 11
+end
+
+conf term
+interface fastethernet 0/15
+switchport mode access
+switchport access vlan 11
+end
+
+3- Verificar IPs das maquinas:
+
+tux11:
+ifconfig eth0 172.16.10.1/24
+
+tux12:
+ifconfig eth0 172.16.11.1/24
+
+tux14:
+ifconfig eth0 172.16.10.254/24
+ifconfig eth1 172.16.11.253/24
+
+ip interno do router definido no passo de NAT
+
+4- Routes:
+
+no inicio, verificar routes existentes com:
+route -n
+
+eliminar routes indesejadas com:
+route del -net <address>/<mask> gw <gateway>
+ou, caso nao funcione,
+route del -net <address> gw <gateway> netmask <mask>
+
+tux11:
+route add default gw 172.16.10.254
+
+tux12:
+route add 172.16.10.0/24 gw 172.16.11.253
+route add default gw 172.16.11.253
+
+tux14:
+route add default gw 172.16.11.254
+
+router:
+Definidas no passo de configurar NAT, mas sao:
+172.16.10.0/24 -> 172.16.11.253
+default -> 172.16.1.254
+
+5- Ativar IP forwarding no tux4:
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+echo 0 > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+
+6- Configurar NAT
+
+conf t
+interface gigabitethernet 0/0
+ip address 172.16.11.254 255.255.255.0
+no shutdown
+ip nat inside
+exit
+
+interface gigabitethernet 0/1
+ip address 172.16.1.19 255.255.255.0
+no shutdown
+ip nat outside
+exit
+
+ip nat pool ovrld 172.16.1.19 172.16.1.19 prefix 24
+ip nat inside source list 1 pool ovrld overload
+
+access-list 1 permit 172.16.10.0 0.0.0.7
+access-list 1 permit 172.16.11.0 0.0.0.7
+
+ip route 0.0.0.0 0.0.0.0 172.16.1.254
+ip route 172.16.10.0 255.255.255.0 172.16.11.253
+end
+
+7- DNS
+
+em cada tux:
+
+sudo nano /etc/resolv.conf
+
+nameserver 172.16.1.1
